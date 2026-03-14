@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project plan
+    url: https://github.com/Psysician/cusage-rs/blob/main/plans/m1-bootstrap-and-contract-harness.md
+    about: Check the current milestone scope before opening a new request.
+

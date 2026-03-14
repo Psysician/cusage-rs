@@ -1,0 +1,15 @@
+[package]
+name = "cusage-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Rust rewrite scaffold for ccusage"
+license = "MIT"
+repository = "https://github.com/Psysician/cusage-rs"
+homepage = "https://github.com/Psysician/cusage-rs"
+readme = "README.md"
+rust-version = "1.93"
+keywords = ["claude-code", "usage", "tokens", "cost", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
