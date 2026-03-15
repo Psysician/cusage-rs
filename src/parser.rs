@@ -1,4 +1,4 @@
-use crate::domain::{EventKind, EventOrigin, TokenUsage, UsageEvent};
+use crate::domain::{EventKind, EventOrigin, TokenUsage, UsageEvent, UsageSpeed};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -60,6 +60,13 @@ const MODEL_PATHS: &[&[&str]] = &[
     &["message", "model_name"],
     &["usage", "model"],
     &["metadata", "model"],
+];
+
+const SPEED_PATHS: &[&[&str]] = &[
+    &["speed"],
+    &["usage", "speed"],
+    &["message", "usage", "speed"],
+    &["response", "usage", "speed"],
 ];
 
 const INPUT_TOKEN_PATHS: &[&[&str]] = &[
@@ -155,6 +162,7 @@ const PROJECT_KEYS: &[&str] = &[
     "cwd",
 ];
 const MODEL_KEYS: &[&str] = &["model", "model_name", "modelname"];
+const SPEED_KEYS: &[&str] = &["speed"];
 
 const INPUT_TOKEN_KEYS: &[&str] = &[
     "input_tokens",
@@ -666,6 +674,7 @@ fn normalize_event(
         session_id: extract_string(value, SESSION_ID_PATHS, SESSION_ID_KEYS),
         project: extract_string(value, PROJECT_PATHS, PROJECT_KEYS),
         model: extract_string(value, MODEL_PATHS, MODEL_KEYS),
+        speed: UsageSpeed::from_raw(extract_string(value, SPEED_PATHS, SPEED_KEYS).as_deref()),
         usage,
         raw_cost_usd: extract_f64(value, COST_PATHS, COST_KEYS),
     })
@@ -1037,7 +1046,7 @@ mod tests {
         let content = concat!(
             "{\"timestamp\":1700000000,\"type\":\"assistant_message\",\"session_id\":\"s1\",\"project\":\"alpha\",\"model\":\"claude-a\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":3}}\n",
             "{\"createdAt\":\"1970-01-01T00:00:02Z\",\"event\":\"tool_result\",\"session\":{\"id\":\"s2\"},\"project_name\":\"beta\",\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":11,\"total_tokens\":99}}\n",
-            "{\"timestamp\":1700000000123456,\"type\":\"custom_event\",\"message\":{\"usage\":{\"inputTokens\":\"4\",\"outputTokens\":\"6\"},\"model\":\"claude-b\"},\"total_cost_usd\":\"0.123\"}\n"
+            "{\"timestamp\":1700000000123456,\"type\":\"custom_event\",\"message\":{\"usage\":{\"inputTokens\":\"4\",\"outputTokens\":\"6\",\"speed\":\"fast\"},\"model\":\"claude-b\"},\"total_cost_usd\":\"0.123\"}\n"
         );
 
         write(&file, content).expect("failed to write fixture file");
@@ -1072,6 +1081,10 @@ mod tests {
             EventKind::Unknown("custom_event".to_owned())
         );
         assert_eq!(parsed.events[2].model.as_deref(), Some("claude-b"));
+        assert_eq!(
+            parsed.events[2].speed,
+            Some(crate::domain::UsageSpeed::Fast)
+        );
         assert_eq!(parsed.events[2].usage.input_tokens, 4);
         assert_eq!(parsed.events[2].usage.output_tokens, 6);
         assert_eq!(parsed.events[2].usage.total_tokens, 10);

@@ -42,7 +42,7 @@ Current binary behavior is intentionally narrow:
 cargo run -- daily --since 20250525 --json
 ```
 
-The command surface is present, but the parser, aggregation, pricing, and renderer implementations are still pending.
+The command surface is present. Discovery, parser normalization, and pricing/derived-metric primitives are implemented; report-mode aggregation and rendering are still pending.
 
 ## Repository Docs
 

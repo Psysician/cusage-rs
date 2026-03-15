@@ -42,6 +42,28 @@ impl EventKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageSpeed {
+    Standard,
+    Fast,
+}
+
+impl UsageSpeed {
+    #[must_use]
+    pub fn from_raw(raw: Option<&str>) -> Option<Self> {
+        let normalized = raw
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+
+        match normalized.as_deref() {
+            Some("standard") => Some(Self::Standard),
+            Some("fast") => Some(Self::Fast),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TokenUsage {
     pub input_tokens: u64,
@@ -83,6 +105,7 @@ pub struct UsageEvent {
     pub session_id: Option<String>,
     pub project: Option<String>,
     pub model: Option<String>,
+    pub speed: Option<UsageSpeed>,
     pub usage: TokenUsage,
     pub raw_cost_usd: Option<f64>,
 }

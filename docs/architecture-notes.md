@@ -15,6 +15,7 @@
 - `discovery`: file-system traversal and input selection
 - `parser`: JSONL event decoding and normalization
 - `domain`: token/cost models and report records
+- `pricing`: cost-mode resolution, model pricing lookup, and derived metric math
 - `aggregate`: grouping, rollups, and date/block calculations
 - `render`: terminal tables, compact views, and JSON output
 

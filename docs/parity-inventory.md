@@ -20,7 +20,7 @@
 
 - Current Rust CLI scaffold covers `daily`, `monthly`, `session`, `blocks`, and `statusline` command parsing in `src/main.rs`.
 - `weekly` mode and most runtime behavior remain unimplemented.
-- Existing placeholders do not satisfy parity for parsing, aggregation, pricing, or rendering.
+- Discovery/parsing and pricing primitives are implemented locally; report aggregation, mode-specific behavior, and rendering parity remain incomplete.
 
 ## Parity checklist
 
