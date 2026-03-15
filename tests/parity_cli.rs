@@ -103,6 +103,84 @@ fn session_table_supports_compact_breakdown_instances_and_locale_flags() {
 }
 
 #[test]
+fn human_readable_modes_match_layout_fixtures() {
+    let claude_config_dir = fixture_root().join("session/basic/claude-config");
+    let cases = [
+        ("daily", "cli/human_layouts/daily.txt"),
+        ("weekly", "cli/human_layouts/weekly.txt"),
+        ("monthly", "cli/human_layouts/monthly.txt"),
+        ("session", "cli/human_layouts/session.txt"),
+        ("blocks", "cli/human_layouts/blocks.txt"),
+        ("statusline", "cli/human_layouts/statusline.txt"),
+    ];
+
+    for (mode, fixture_path) in cases {
+        let expected = read_fixture(fixture_path);
+        let first = run_cli(&[mode], &claude_config_dir);
+        let second = run_cli(&[mode], &claude_config_dir);
+
+        assert_success(&first, &format!("{mode} human-readable fixture"));
+        assert_success(&second, &format!("{mode} human-readable fixture repeat"));
+
+        let expected = normalize_line_end(expected);
+        let first_stdout = normalize_line_end(stdout_text(&first));
+        let second_stdout = normalize_line_end(stdout_text(&second));
+
+        assert_eq!(
+            first_stdout, expected,
+            "{mode} human-readable fixture mismatch"
+        );
+        assert_eq!(
+            first_stdout, second_stdout,
+            "{mode} human-readable fixture is not stable"
+        );
+    }
+}
+
+#[test]
+fn daily_json_calculates_non_zero_cost_for_known_model_without_raw_cost_field() {
+    let expected = read_fixture("cli/daily_calculated_cost/expected.json");
+    let claude_config_dir = fixture_root().join("cli/daily_calculated_cost/claude-config");
+
+    let first = run_cli(&["daily", "--json"], &claude_config_dir);
+    let second = run_cli(&["daily", "--json"], &claude_config_dir);
+
+    assert_success(
+        &first,
+        "daily json known-model missing-raw-cost fixture should succeed",
+    );
+    assert_success(
+        &second,
+        "daily json known-model missing-raw-cost fixture repeat should succeed",
+    );
+
+    let expected = normalize_line_end(expected);
+    let first_stdout = normalize_line_end(stdout_text(&first));
+    let second_stdout = normalize_line_end(stdout_text(&second));
+
+    assert_eq!(
+        first_stdout, expected,
+        "daily json known-model missing-raw-cost output mismatch"
+    );
+    assert_eq!(
+        first_stdout, second_stdout,
+        "daily json known-model missing-raw-cost output is not stable"
+    );
+    assert!(
+        first_stdout.contains("\"usd\": 0.0105"),
+        "expected non-zero calculated usd in daily json output"
+    );
+    assert!(
+        first_stdout.contains("\"calculated_entries\": 1"),
+        "expected calculated entries count for missing raw cost event"
+    );
+    assert!(
+        first_stdout.contains("\"missing_entries\": 0"),
+        "expected known model to resolve without missing cost entries"
+    );
+}
+
+#[test]
 fn malformed_jsonl_is_tolerated_with_deterministic_warning_counts() {
     let expected = read_fixture("daily/malformed/expected.json");
     let claude_config_dir = fixture_root().join("daily/malformed/claude-config");

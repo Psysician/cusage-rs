@@ -1,0 +1,1 @@
+model=claude-sonnet | session=$0.15 | today=$0.15 | block=active($0.09,5h00m) | burn=$0.00/h | input=100
