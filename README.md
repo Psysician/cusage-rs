@@ -8,16 +8,18 @@ This repository is intentionally separate from the existing [`Psysician/cusage`]
 
 - Cargo binary project with CI, lint/test commands, and issue templates
 - Initial CLI contract scaffold for `daily`, `monthly`, `session`, `blocks`, and `statusline`
+- Upstream parity checklist refreshed in `docs/parity-inventory.md` from current public docs snapshot
 - Project docs capturing parity targets, architecture boundaries, and milestone acceptance criteria
 
 ## Planned Compatibility
 
 The first parity line targets the upstream `ccusage` CLI for Claude usage data:
 
-- `daily`, `monthly`, `session`, `blocks`, and `statusline` command modes
-- shared filters such as `--since`, `--until`, `--json`, `--breakdown`, `--timezone`, and `--locale`
-- instance grouping, project filtering, and compact rendering expectations
-- local JSONL discovery from `~/.claude/projects`
+- report modes `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`
+- shared/global flags including `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--mode`, `--offline`, `--timezone`, `--locale`, `--config`, and debug options
+- command-specific flags such as `--instances`, `--project`, `--start-of-week`, `--id`, and block/statusline refresh controls
+- local JSONL discovery rooted in both `~/.config/claude/projects` and `~/.claude/projects`, including `CLAUDE_CONFIG_DIR` overrides
+- documented config-file hierarchy and precedence behavior (`.ccusage/ccusage.json`, user config, and legacy config)
 
 Fork-only behavior from the current `Psysician/cusage` repository, including Codex aggregation, is out of scope for this bootstrap and will be reconsidered only after upstream parity is established.
 
@@ -51,4 +53,3 @@ The command surface is present, but the parser, aggregation, pricing, and render
 ## License
 
 MIT
-

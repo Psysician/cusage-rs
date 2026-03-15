@@ -1,6 +1,6 @@
 # Ralph Tasks
 
-- [ ] Reconcile upstream `ccusage` public docs and CLI contract with local repo docs, and update the parity checklist.
+- [x] Reconcile upstream `ccusage` public docs and CLI contract with local repo docs, and update the parity checklist.
 - [ ] Implement filesystem discovery and configurable data-root selection for local Claude usage/session files.
 - [ ] Implement robust JSONL event parsing and normalization into stable Rust domain models.
 - [ ] Implement pricing and derived metric calculation consistent with documented upstream behavior.

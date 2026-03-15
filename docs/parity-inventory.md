@@ -1,41 +1,92 @@
 # cusage-rs parity inventory
 
-## Source of truth
+## Scope and snapshot
 
-- Behavioral target: `ryoppippi/ccusage`
+- Behavioral target: [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage)
+- Snapshot date: `2026-03-15`
 - Rewrite constraint: clean-room Rust implementation
-- Non-target for bootstrap: current `Psysician/cusage` fork behavior beyond notes called out below
+- Legend: `[x]` implemented and parity-tested, `[ ]` not yet parity-complete (including scaffold-only coverage)
 
-## Commands to match
+## Upstream contract sources used
 
-- `daily`: default report mode with date grouping
-- `monthly`: month-level aggregation
-- `session`: conversation session grouping
-- `blocks`: billing-window grouping
-- `statusline`: compact status output for hooks
+- [Command-Line Options](https://ccusage.com/guide/cli-options)
+- [Configuration Files](https://ccusage.com/guide/config-files)
+- [Configuration Overview](https://ccusage.com/guide/configuration)
+- [Directory Detection](https://ccusage.com/guide/directory-detection)
+- [Environment Variables](https://ccusage.com/guide/environment-variables)
+- [Upstream README](https://github.com/ryoppippi/ccusage)
 
-## Flags and inputs to preserve
+## Current local baseline
 
-- `--since YYYYMMDD`
-- `--until YYYYMMDD`
-- `--json`
-- `--breakdown`
-- `--compact`
-- `--instances`
-- `--project <name>`
-- `--timezone <tz>`
-- `--locale <locale>`
+- Current Rust CLI scaffold covers `daily`, `monthly`, `session`, `blocks`, and `statusline` command parsing in `src/main.rs`.
+- `weekly` mode and most runtime behavior remain unimplemented.
+- Existing placeholders do not satisfy parity for parsing, aggregation, pricing, or rendering.
 
-## Data and behavior invariants
+## Parity checklist
 
-- Read Claude usage data from local JSONL session files under `~/.claude/projects`
-- Aggregate tokens and costs without requiring a network round-trip for session discovery
-- Preserve report-mode semantics before redesigning table layout
-- Prefer deterministic fixtures and golden outputs over ad hoc manual verification
+### Report modes
 
-## Explicitly deferred from bootstrap
+- [ ] `daily`
+- [ ] `weekly`
+- [ ] `monthly`
+- [ ] `session`
+- [ ] `blocks`
+- [ ] `statusline`
 
-- Codex/OpenAI aggregation from the current `Psysician/cusage` fork
-- Compatibility shims for the fork's custom pricing and cache behavior
-- Release packaging and alias strategy for a final `cusage` binary name
+### Shared/global CLI contract
 
+- [ ] `--since YYYYMMDD`
+- [ ] `--until YYYYMMDD`
+- [ ] `--json` / `-j`
+- [ ] `--breakdown` / `-b`
+- [ ] `--compact` (README-documented compact table mode)
+- [ ] `--mode auto|calculate|display`
+- [ ] `--offline` / `-O`
+- [ ] `--timezone <tz>` / `-z`
+- [ ] `--locale <locale>` / `-l`
+- [ ] `--config <path>`
+- [ ] `--debug`
+- [ ] `--debug-samples <n>`
+- [ ] `--jq <filter>` (JSON post-processing)
+
+### Command-specific CLI contract
+
+- [ ] `daily`: `--instances` / `-i`, `--project <name>` / `-p`
+- [ ] `weekly`: `--start-of-week monday|sunday`
+- [ ] `session`: `--id <session-id>`, `--project <name>`
+- [ ] `blocks`: `--active`, `--recent`, `--token-limit`, `--session-length`, `--live`, `--refresh-interval`
+- [ ] `statusline`: `--offline`, `--cache`, `--refresh-interval`
+
+### Discovery and data-root behavior
+
+- [ ] Default root discovery merges both `~/.config/claude/projects` and `~/.claude/projects`
+- [ ] `CLAUDE_CONFIG_DIR` supports one custom root
+- [ ] `CLAUDE_CONFIG_DIR` supports comma-separated multiple roots with aggregation
+- [ ] Invalid/unreadable roots are handled defensively without corrupting totals
+
+### Configuration file behavior
+
+- [ ] Detect local config at `.ccusage/ccusage.json`
+- [ ] Detect user config at `~/.config/claude/ccusage.json`
+- [ ] Detect legacy config at `~/.claude/ccusage.json`
+- [ ] Honor `--config <path>` override
+- [ ] Merge `defaults` and command-specific overrides
+- [ ] Apply documented precedence: CLI args > `--config` > environment variables > local config > user config > legacy config > built-in defaults
+
+### Output and determinism
+
+- [ ] Deterministic JSON output for all report modes
+- [ ] Deterministic table rendering with stable ordering and totals
+- [ ] Deterministic timezone/locale behavior for grouping and display
+- [ ] Golden/parity fixtures for representative mode + flag combinations
+
+## Upstream doc divergences to track
+
+- README (`apps/ccusage/README.md`) documents `--compact` and does not list `weekly` in the quick usage block.
+- `ccusage.com/guide/cli-options` documents `weekly` and additional global options (`--mode`, `--config`, `--debug`, `--debug-samples`, `--jq`) but does not document `--compact` on that page.
+- Until black-box parity tests confirm runtime behavior, this checklist tracks the union of these public docs and flags the discrepancy explicitly.
+
+## Explicit bootstrap deferrals
+
+- Provider-specific behavior beyond the Claude session-file contract (for example OpenAI/Codex-specific features in other ecosystems) remains out of scope until core Claude parity is complete.
+- Release packaging and alias strategy for final binary naming remains out of scope for the current milestone.

@@ -3,6 +3,7 @@
 ## Runtime pipeline
 
 1. Discover Claude session files under the configured data root.
+   - Respect documented root resolution and precedence across CLI flags, config files, environment variables, and default Claude directories.
 2. Parse JSONL events into a stable internal usage model.
 3. Aggregate by report mode: day, month, session, or billing block.
 4. Resolve pricing and derived metrics.
@@ -22,4 +23,3 @@
 - Keep parser and renderer separated so golden fixtures can validate aggregation independently.
 - Build fixture-driven acceptance tests before broad refactors.
 - Treat upstream CLI behavior as the contract until parity tests say otherwise.
-
