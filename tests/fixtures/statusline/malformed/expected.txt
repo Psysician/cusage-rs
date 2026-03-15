@@ -1,1 +1,1 @@
-model=unknown session_usd=0.01 today_usd=0.01 block_usd=0.01 block_remaining=5h00m burn_usd_per_hour=0.00 input_tokens=10
+model=unknown | session=$0.01 | today=$0.01 | block=active($0.01,5h00m) | burn=$0.00/h | input=10

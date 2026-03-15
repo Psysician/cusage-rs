@@ -2076,21 +2076,20 @@ pub fn render_statusline_report_json(
 #[must_use]
 pub fn render_statusline_report_line(report: &StatuslineReport) -> String {
     let model = report.model.as_deref().unwrap_or("unknown");
-    let (block_usd, block_remaining, burn_usd_per_hour) = match &report.active_block {
+    let (block_state, burn_usd_per_hour) = match &report.active_block {
         Some(block) => (
-            format_money_fixed_2(block.cost_usd),
-            compact_duration_from_ms(block.remaining_ms),
+            format!(
+                "active(${},{})",
+                format_money_fixed_2(block.cost_usd),
+                compact_duration_from_ms(block.remaining_ms)
+            ),
             format_money_fixed_2(block.burn_rate_usd_per_hour),
         ),
-        None => (
-            format_money_fixed_2(0.0),
-            compact_duration_from_ms(0),
-            format_money_fixed_2(0.0),
-        ),
+        None => ("idle".to_owned(), format_money_fixed_2(0.0)),
     };
 
     format!(
-        "model={model} session_usd={} today_usd={} block_usd={block_usd} block_remaining={block_remaining} burn_usd_per_hour={burn_usd_per_hour} input_tokens={}\n",
+        "model={model} | session=${} | today=${} | block={block_state} | burn=${burn_usd_per_hour}/h | input={}\n",
         format_money_fixed_2(report.session_cost_usd),
         format_money_fixed_2(report.today_cost_usd),
         report.session_input_tokens
@@ -2909,7 +2908,7 @@ mod tests {
         assert!(!trimmed.contains('\n'));
         assert_eq!(
             trimmed,
-            "model=claude-sonnet session_usd=0.17 today_usd=0.05 block_usd=0.05 block_remaining=5h00m burn_usd_per_hour=0.00 input_tokens=155"
+            "model=claude-sonnet | session=$0.17 | today=$0.05 | block=active($0.05,5h00m) | burn=$0.00/h | input=155"
         );
 
         let as_json = render_statusline_report_json(&report, 1, 2);
@@ -2919,6 +2918,33 @@ mod tests {
         assert!(as_json.contains("\"remaining\": \"5h00m\""));
         assert!(as_json.contains("\"discovery\": 1"));
         assert!(as_json.contains("\"parse\": 2"));
+    }
+
+    #[test]
+    fn renders_statusline_with_idle_block_state_when_no_active_block() {
+        let report = StatuslineReport {
+            model: Some("claude-sonnet".to_owned()),
+            session_cost_usd: 0.02,
+            session_raw_cost_usd: 0.0,
+            session_calculated_cost_usd: 0.02,
+            session_entries_with_raw_cost: 0,
+            session_entries_with_calculated_cost: 1,
+            session_entries_with_missing_cost: 0,
+            today_cost_usd: 0.02,
+            today_raw_cost_usd: 0.0,
+            today_calculated_cost_usd: 0.02,
+            today_entries_with_raw_cost: 0,
+            today_entries_with_calculated_cost: 1,
+            today_entries_with_missing_cost: 0,
+            session_input_tokens: 100,
+            active_block: None,
+        };
+
+        let rendered = render_statusline_report_line(&report);
+        assert_eq!(
+            rendered.trim_end_matches('\n'),
+            "model=claude-sonnet | session=$0.02 | today=$0.02 | block=idle | burn=$0.00/h | input=100"
+        );
     }
 
     fn test_event(

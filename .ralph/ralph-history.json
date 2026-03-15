@@ -116,9 +116,37 @@
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "\"text\": \"Error: Facts array is required when type is 'both'. Please provide at least one fact.\""
       ]
+    },
+    {
+      "iteration": 5,
+      "startedAt": "2026-03-15T21:14:34.664Z",
+      "endedAt": "2026-03-15T21:16:55.168Z",
+      "durationMs": 140347,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "2": 2,
+        "focused": 1,
+        "tests": 1,
+        "unittests": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/report.rs",
+        "tests/fixtures/statusline/basic/expected.txt",
+        "tests/fixtures/statusline/malformed/expected.txt"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "tests/parity_statusline.rs:23:        .expect(\"failed to read expected statusline text output\");",
+        "tests/parity_statusline.rs:25:        .expect(\"failed to read expected statusline json output\");",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 1933418,
+  "totalDurationMs": 2073765,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 5 contextual memories and 920 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
@@ -133,7 +161,11 @@
       "\"text\": \"Found 5 contextual memories and 933 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs human-readable layout pricing catalog": 1,
       "error: unexpected argument 'daily_json_respects_since_until_project_and_timezone_flags' found": 1,
-      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "tests/parity_statusline.rs:23:        .expect(\"failed to read expected statusline text output\");": 1,
+      "tests/parity_statusline.rs:25:        .expect(\"failed to read expected statusline json output\");": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
