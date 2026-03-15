@@ -27,8 +27,10 @@
   - pricing and derived metrics
   - report aggregation by mode
   - table/JSON rendering
+- All CLI report paths, including `statusline`, use `PricingCatalog::default_claude_catalog()` (Claude aliases plus provider-prefixed variants).
+- Cost provenance is preserved across reports (`raw` vs `calculated` vs `missing`) and exposed in both JSON fields and human table `R/C/M` columns.
 - Deterministic JSON golden fixtures exist for every report mode.
-- Deterministic table fixtures cover statusline hook output plus representative shared-flag table behavior.
+- Deterministic fixtures cover redesigned default human-readable layouts for `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`, plus representative shared-flag table behavior.
 
 ## Verification coverage
 
@@ -39,6 +41,8 @@
 - `tests/parity_blocks.rs`
 - `tests/parity_statusline.rs`
 - `tests/parity_cli.rs`:
+  - redesigned default human layout fixture checks (`tests/fixtures/cli/human_layouts/*`)
+  - known-model missing-raw-cost regression (`tests/fixtures/cli/daily_calculated_cost/*`)
   - shared-flag behavior (`--since`, `--until`, `--project`, `--timezone`, `--compact`, `--breakdown`, `--instances`, `--locale`)
   - deterministic output checks
   - malformed input behavior
@@ -100,14 +104,24 @@
 ### Output and determinism
 
 - [x] Deterministic JSON output for all report modes
-- [x] Deterministic table output for statusline and representative shared-flag table combinations
+- [x] Deterministic redesigned default human output for `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`
+- [x] Deterministic table output for representative shared-flag combinations (`--compact`, `--breakdown`, `--instances`, `--locale`)
 - [x] Deterministic timezone/locale behavior for implemented flags
 - [x] Golden/parity fixtures for representative mode + flag combinations
 - [x] Malformed-input handling with deterministic warning counts
 
+### Pricing and cost provenance contract
+
+- [x] Default catalog wiring is shared by every report mode and `statusline` (`PricingCatalog::default_claude_catalog()`)
+- [x] `CostMode::Auto` behavior is preserved: use raw cost when present, otherwise calculate for resolvable models, otherwise mark missing
+- [x] Known model events without raw `cost_usd` produce non-zero calculated totals in normal CLI flow
+- [x] Unknown/unresolvable models without raw `cost_usd` stay unresolved (`missing_entries` / `R/C/M`), with no synthetic pricing
+- [ ] CLI/config pricing catalog overrides
+
 ## Explicit residual deltas
 
 - Missing options listed as unchecked above remain out of scope for the current rewrite milestone and are not exposed by the Rust CLI.
+- Pricing defaults are static and Claude-focused; non-Claude/new model identifiers rely on raw event cost fields unless added to the local catalog.
 - `--timezone` does not currently accept IANA zone names (for example `Europe/Berlin`); only UTC/GMT/Z and signed fixed offsets are supported.
 - `--offline` is parsed and precedence-aware, but currently operationally neutral because this rewrite does not make network calls in the report pipeline.
 - CLI binary name remains `cusage-rs`.
