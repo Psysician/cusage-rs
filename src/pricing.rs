@@ -11,6 +11,47 @@ const DEFAULT_PROVIDER_PREFIXES: &[&str] = &[
     "azure",
     "gemini",
 ];
+const CLAUDE_4_OPUS_ALIASES: &[&str] = &[
+    "claude-opus-4-20250514",
+    "claude-opus-4",
+    "claude-opus",
+    "anthropic.claude-opus-4-20250514-v1:0",
+];
+const CLAUDE_4_SONNET_ALIASES: &[&str] = &[
+    "claude-sonnet-4-20250514",
+    "claude-sonnet-4",
+    "anthropic.claude-sonnet-4-20250514-v1:0",
+];
+const CLAUDE_3_7_SONNET_ALIASES: &[&str] = &[
+    "claude-3-7-sonnet-20250219",
+    "claude-3-7-sonnet",
+    "claude-3.7-sonnet",
+    "anthropic.claude-3-7-sonnet-20250219-v1:0",
+];
+const CLAUDE_3_5_SONNET_ALIASES: &[&str] = &[
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-sonnet",
+    "claude-3.5-sonnet",
+    "claude-sonnet",
+    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+];
+const CLAUDE_3_5_HAIKU_ALIASES: &[&str] = &[
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-haiku",
+    "claude-3.5-haiku",
+    "anthropic.claude-3-5-haiku-20241022-v1:0",
+];
+const CLAUDE_3_OPUS_ALIASES: &[&str] = &[
+    "claude-3-opus-20240229",
+    "claude-3-opus",
+    "anthropic.claude-3-opus-20240229-v1:0",
+];
+const CLAUDE_3_HAIKU_ALIASES: &[&str] = &[
+    "claude-3-haiku-20240307",
+    "claude-3-haiku",
+    "claude-haiku",
+    "anthropic.claude-3-haiku-20240307-v1:0",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CostMode {
@@ -119,6 +160,11 @@ impl PricingCatalog {
     }
 
     #[must_use]
+    pub fn default_claude_catalog() -> Self {
+        Self::new().with_default_claude_pricing()
+    }
+
+    #[must_use]
     pub fn with_default_provider_prefixes(mut self) -> Self {
         if self.provider_prefixes.is_empty() {
             self.provider_prefixes = DEFAULT_PROVIDER_PREFIXES
@@ -129,12 +175,36 @@ impl PricingCatalog {
         self
     }
 
+    #[must_use]
+    pub fn with_default_claude_pricing(mut self) -> Self {
+        let claude_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
+        let claude_haiku_pricing = ModelPricing::from_per_million(0.8, 4.0, 1.0, 0.08);
+        let claude_3_haiku_pricing = ModelPricing::from_per_million(0.25, 1.25, 0.3, 0.03);
+        let claude_opus_pricing = ModelPricing::from_per_million(15.0, 75.0, 18.75, 1.5);
+
+        self.insert_aliases(CLAUDE_4_OPUS_ALIASES, &claude_opus_pricing);
+        self.insert_aliases(CLAUDE_4_SONNET_ALIASES, &claude_sonnet_pricing);
+        self.insert_aliases(CLAUDE_3_7_SONNET_ALIASES, &claude_sonnet_pricing);
+        self.insert_aliases(CLAUDE_3_5_SONNET_ALIASES, &claude_sonnet_pricing);
+        self.insert_aliases(CLAUDE_3_5_HAIKU_ALIASES, &claude_haiku_pricing);
+        self.insert_aliases(CLAUDE_3_OPUS_ALIASES, &claude_opus_pricing);
+        self.insert_aliases(CLAUDE_3_HAIKU_ALIASES, &claude_3_haiku_pricing);
+
+        self
+    }
+
     pub fn insert(&mut self, model: impl Into<String>, pricing: ModelPricing) {
         let normalized = normalize_model_key(&model.into());
         if normalized.is_empty() {
             return;
         }
         self.by_model.insert(normalized, pricing);
+    }
+
+    fn insert_aliases(&mut self, aliases: &[&str], pricing: &ModelPricing) {
+        for alias in aliases {
+            self.insert(*alias, pricing.clone());
+        }
     }
 
     #[must_use]
@@ -148,6 +218,12 @@ impl PricingCatalog {
             return Some(pricing);
         }
 
+        if let Some(stripped) = self.strip_known_provider_prefix(&model)
+            && let Some(pricing) = self.by_model.get(stripped)
+        {
+            return Some(pricing);
+        }
+
         for provider in &self.provider_prefixes {
             let candidate = format!("{provider}/{model}");
             if let Some(pricing) = self.by_model.get(&candidate) {
@@ -156,6 +232,17 @@ impl PricingCatalog {
         }
 
         self.fuzzy_match(&model)
+    }
+
+    fn strip_known_provider_prefix<'a>(&self, model: &'a str) -> Option<&'a str> {
+        let (provider, stripped) = model.split_once('/')?;
+        if stripped.is_empty() {
+            return None;
+        }
+        if self.provider_prefixes.iter().any(|known| known == provider) {
+            return Some(stripped);
+        }
+        None
     }
 
     fn fuzzy_match(&self, model: &str) -> Option<&ModelPricing> {
@@ -460,10 +547,50 @@ mod tests {
     fn model_resolution_supports_provider_prefix_and_fuzzy_lookup() {
         let mut catalog = PricingCatalog::new();
         let pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
-        catalog.insert("anthropic/claude-3-5-sonnet-20241022", pricing.clone());
+        catalog.insert("claude-3-5-sonnet-20241022", pricing.clone());
 
         assert!(catalog.resolve("claude-3-5-sonnet-20241022").is_some());
+        assert!(
+            catalog
+                .resolve("anthropic/claude-3-5-sonnet-20241022")
+                .is_some()
+        );
         assert!(catalog.resolve("claude-3-5-sonnet").is_some());
+    }
+
+    #[test]
+    fn default_catalog_resolves_claude_aliases_and_provider_prefixed_variants() {
+        let catalog = PricingCatalog::default_claude_catalog();
+
+        assert!(catalog.resolve("claude-sonnet").is_some());
+        assert!(catalog.resolve("anthropic/claude-sonnet").is_some());
+        assert!(catalog.resolve("openrouter/claude-3.5-sonnet").is_some());
+        assert!(
+            catalog
+                .resolve("bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0")
+                .is_some()
+        );
+        assert!(catalog.resolve("claude-opus").is_some());
+        assert!(catalog.resolve("claude-haiku").is_some());
+    }
+
+    #[test]
+    fn default_catalog_calculates_known_model_without_raw_cost() {
+        let catalog = PricingCatalog::default_claude_catalog();
+        let event = test_event(
+            "claude-sonnet",
+            Some(UsageSpeed::Standard),
+            None,
+            1_000,
+            500,
+            0,
+            0,
+        );
+
+        let resolved = resolve_event_cost(&event, CostMode::Auto, &catalog);
+
+        assert_eq!(resolved.source, CostSource::Calculated);
+        assert_close(resolved.cost_usd, 0.0105);
     }
 
     #[test]

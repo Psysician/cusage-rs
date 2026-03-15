@@ -34,7 +34,11 @@ fn run_weekly_json(claude_config_dir: &Path) -> String {
     let roots = vec![claude_config_dir.join("projects")];
     let discovered = discover_session_files(&roots);
     let parsed = parse_jsonl_files(&discovered.files);
-    let report = build_weekly_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+    let report = build_weekly_report(
+        &parsed.events,
+        CostMode::Auto,
+        &PricingCatalog::default_claude_catalog(),
+    );
     render_weekly_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
 }
 

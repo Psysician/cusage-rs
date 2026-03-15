@@ -59,7 +59,11 @@ fn run_statusline_outputs(claude_config_dir: &Path) -> (String, String) {
     let roots = vec![claude_config_dir.join("projects")];
     let discovered = discover_session_files(&roots);
     let parsed = parse_jsonl_files(&discovered.files);
-    let report = build_statusline_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+    let report = build_statusline_report(
+        &parsed.events,
+        CostMode::Auto,
+        &PricingCatalog::default_claude_catalog(),
+    );
 
     let line = render_statusline_report_line(&report);
     let json =

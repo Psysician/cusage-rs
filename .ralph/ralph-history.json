@@ -26,13 +26,49 @@
         "\"text\": \"Found 5 contextual memories and 920 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [procedural] score=2.069 salience=0.500 id=a0caf70c-51e6-4fc5-ae2f-dad057482015\\nSession summary for cus",
         "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs human-readable report layout pricing catalog fixtures statusline ralph tasks\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n"
       ]
+    },
+    {
+      "iteration": 2,
+      "startedAt": "2026-03-15T20:51:48.239Z",
+      "endedAt": "2026-03-15T20:57:54.545Z",
+      "durationMs": 366141,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "35": 1,
+        "Windows": 2,
+        "unittests": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/main.rs",
+        "src/pricing.rs",
+        "tests/parity_blocks.rs",
+        "tests/parity_daily.rs",
+        "tests/parity_monthly.rs",
+        "tests/parity_session.rs",
+        "tests/parity_statusline.rs",
+        "tests/parity_weekly.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\"text\": \"Found 5 contextual memories and 926 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=1.224 salience=0.400 id=2393854f-7c55-48df-b04b-90f117a54aca\\nRalph layout/pricing loop",
+        "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs pricing catalog report statusline layout task loop preferences\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n      \\\"id\\\": ",
+        "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"both\",\"content\":\"cusage-rs Ralph iteration 2 completed pricing-catalog wiring: added PricingCatalog::default_claude_catalog with populated Claud",
+        "\"text\": \"Error: Facts array is required when type is 'both'. Please provide at least one fact.\""
+      ]
     }
   ],
-  "totalDurationMs": 570973,
+  "totalDurationMs": 937114,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 5 contextual memories and 920 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
-      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs human-readable report layout pricing ": 1
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs human-readable report layout pricing ": 1,
+      "\"text\": \"Found 5 contextual memories and 926 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs pricing catalog report statusline lay": 1,
+      "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"both\",\"content\":\"cusage-rs Ralph iteration 2": 1,
+      "\"text\": \"Error: Facts array is required when type is 'both'. Please provide at least one fact.\"": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
