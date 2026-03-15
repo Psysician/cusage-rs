@@ -1,0 +1,46 @@
+{
+  "mode": "blocks",
+  "blocks": [
+    {
+      "block_start": "2026-03-12T01:00:00Z",
+      "block_end": "2026-03-12T06:00:00Z",
+      "first_event_at": "2026-03-12T01:00:00Z",
+      "last_event_at": "2026-03-12T01:00:00Z",
+      "entries": 1,
+      "tokens": {
+        "input": 10,
+        "output": 5,
+        "cache_creation_input": 0,
+        "cache_read_input": 0,
+        "total": 15
+      },
+      "cost": {
+        "usd": 0.01,
+        "raw_entries": 1,
+        "calculated_entries": 0,
+        "missing_entries": 0
+      }
+    }
+  ],
+  "totals": {
+    "blocks": 1,
+    "entries": 1,
+    "tokens": {
+      "input": 10,
+      "output": 5,
+      "cache_creation_input": 0,
+      "cache_read_input": 0,
+      "total": 15
+    },
+    "cost": {
+      "usd": 0.01,
+      "raw_entries": 1,
+      "calculated_entries": 0,
+      "missing_entries": 0
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 3
+  }
+}

@@ -4,7 +4,8 @@ use cusage_rs::discovery::discover_session_files;
 use cusage_rs::parser::parse_jsonl_files;
 use cusage_rs::pricing::{CostMode, PricingCatalog};
 use cusage_rs::report::{
-    build_daily_report, build_monthly_report, build_session_report, build_weekly_report,
+    build_blocks_report, build_daily_report, build_monthly_report, build_session_report,
+    build_weekly_report, render_blocks_report_json, render_blocks_report_table,
     render_daily_report_json, render_daily_report_table, render_monthly_report_json,
     render_monthly_report_table, render_session_report_json, render_session_report_table,
     render_weekly_report_json, render_weekly_report_table,
@@ -83,7 +84,7 @@ fn describe_command(command: &Command) -> String {
         Command::Weekly(args) => render_weekly_command(args),
         Command::Monthly(args) => render_monthly_command(args),
         Command::Session(args) => render_session_command(args),
-        Command::Blocks(args) => render_report_placeholder("blocks", args),
+        Command::Blocks(args) => render_blocks_command(args),
         Command::Statusline(args) => {
             if args.json {
                 "{\"status\":\"bootstrap\",\"command\":\"statusline\"}".to_owned()
@@ -147,41 +148,17 @@ fn render_session_command(args: &ReportArgs) -> String {
     }
 }
 
-fn render_report_placeholder(mode: &str, args: &ReportArgs) -> String {
-    let mut lines = vec![
-        format!("cusage-rs bootstrap: {mode} mode is scaffolded but not implemented yet."),
-        "Parity target: upstream ryoppippi/ccusage CLI behavior.".to_owned(),
-    ];
+fn render_blocks_command(args: &ReportArgs) -> String {
+    let data_roots = DataRootOptions::from_environment().resolve_project_roots();
+    let discovered = discover_session_files(&data_roots);
+    let parsed = parse_jsonl_files(&discovered.files);
+    let report = build_blocks_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
 
-    if let Some(since) = &args.since {
-        lines.push(format!("Filter since: {since}"));
-    }
-    if let Some(until) = &args.until {
-        lines.push(format!("Filter until: {until}"));
-    }
     if args.json {
-        lines.push("Requested JSON output contract.".to_owned());
+        render_blocks_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+    } else {
+        render_blocks_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
     }
-    if args.breakdown {
-        lines.push("Requested per-model breakdown contract.".to_owned());
-    }
-    if args.compact {
-        lines.push("Requested compact rendering contract.".to_owned());
-    }
-    if args.instances {
-        lines.push("Requested multi-instance grouping contract.".to_owned());
-    }
-    if let Some(project) = &args.project {
-        lines.push(format!("Project filter: {project}"));
-    }
-    if let Some(timezone) = &args.timezone {
-        lines.push(format!("Timezone override: {timezone}"));
-    }
-    if let Some(locale) = &args.locale {
-        lines.push(format!("Locale override: {locale}"));
-    }
-
-    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -222,6 +199,16 @@ mod tests {
         assert!(matches!(
             command,
             Command::Session(ReportArgs { json: true, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_blocks_command() {
+        let cli = Cli::parse_from(["cusage-rs", "blocks", "--json"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        assert!(matches!(
+            command,
+            Command::Blocks(ReportArgs { json: true, .. })
         ));
     }
 }

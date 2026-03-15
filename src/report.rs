@@ -4,6 +4,8 @@ use crate::pricing::{
 };
 use std::collections::BTreeMap;
 
+const DEFAULT_BLOCK_WINDOW_MS: i64 = 5 * 60 * 60 * 1000;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DailyReport {
     pub days: Vec<DailyReportDay>,
@@ -138,6 +140,45 @@ pub struct SessionReportSession {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SessionReportTotals {
     pub sessions: usize,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BlocksReport {
+    pub blocks: Vec<BlocksReportBlock>,
+    pub totals: BlocksReportTotals,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BlocksReportBlock {
+    pub block_start: String,
+    pub block_end: String,
+    pub first_event_at: String,
+    pub last_event_at: String,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BlocksReportTotals {
+    pub blocks: usize,
     pub entries: usize,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -433,13 +474,11 @@ pub fn build_session_report(
 
     for event in events {
         let key = session_group_key(event);
-        let row = grouped
-            .entry(key)
-            .or_insert_with(|| SessionReportSession {
-                session_id: normalized_optional_string(event.session_id.as_deref()),
-                project: normalized_optional_string(event.project.as_deref()),
-                ..SessionReportSession::default()
-            });
+        let row = grouped.entry(key).or_insert_with(|| SessionReportSession {
+            session_id: normalized_optional_string(event.session_id.as_deref()),
+            project: normalized_optional_string(event.project.as_deref()),
+            ..SessionReportSession::default()
+        });
 
         if row.session_id.is_none() {
             row.session_id = normalized_optional_string(event.session_id.as_deref());
@@ -518,6 +557,121 @@ pub fn build_session_report(
             .totals
             .entries_with_missing_cost
             .saturating_add(session.entries_with_missing_cost);
+    }
+
+    report
+}
+
+#[must_use]
+pub fn build_blocks_report(
+    events: &[UsageEvent],
+    cost_mode: CostMode,
+    pricing: &PricingCatalog,
+) -> BlocksReport {
+    let mut sorted = events.iter().collect::<Vec<_>>();
+    sorted.sort_by(|left, right| {
+        left.occurred_at_unix_ms
+            .cmp(&right.occurred_at_unix_ms)
+            .then_with(|| left.origin.file.cmp(&right.origin.file))
+            .then_with(|| left.origin.line_number.cmp(&right.origin.line_number))
+    });
+
+    let mut rows = Vec::<BlocksReportBlock>::new();
+    let mut current_end_ms: Option<i64> = None;
+
+    for event in sorted {
+        let should_start_new = match current_end_ms {
+            Some(end_ms) => event.occurred_at_unix_ms >= end_ms,
+            None => true,
+        };
+
+        if should_start_new {
+            let start_ms = event.occurred_at_unix_ms;
+            let end_ms = start_ms.saturating_add(DEFAULT_BLOCK_WINDOW_MS);
+            rows.push(BlocksReportBlock {
+                block_start: utc_timestamp_label_from_unix_ms(start_ms),
+                block_end: utc_timestamp_label_from_unix_ms(end_ms),
+                first_event_at: utc_timestamp_label_from_unix_ms(start_ms),
+                last_event_at: utc_timestamp_label_from_unix_ms(start_ms),
+                ..BlocksReportBlock::default()
+            });
+            current_end_ms = Some(end_ms);
+        }
+
+        let row = rows
+            .last_mut()
+            .expect("rows always contains current block after initialization");
+        row.entries = row.entries.saturating_add(1);
+        row.last_event_at = utc_timestamp_label_from_unix_ms(event.occurred_at_unix_ms);
+        row.input_tokens = row.input_tokens.saturating_add(event.usage.input_tokens);
+        row.output_tokens = row.output_tokens.saturating_add(event.usage.output_tokens);
+        row.cache_creation_input_tokens = row
+            .cache_creation_input_tokens
+            .saturating_add(event.usage.cache_creation_input_tokens);
+        row.cache_read_input_tokens = row
+            .cache_read_input_tokens
+            .saturating_add(event.usage.cache_read_input_tokens);
+        row.total_tokens = row
+            .total_tokens
+            .saturating_add(total_tokens_for_usage(&event.usage));
+
+        let resolved = resolve_event_cost(event, cost_mode, pricing);
+        row.total_cost_usd += resolved.cost_usd;
+        match resolved.source {
+            CostSource::Raw => {
+                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
+            }
+            CostSource::Calculated => {
+                row.entries_with_calculated_cost =
+                    row.entries_with_calculated_cost.saturating_add(1)
+            }
+            CostSource::Missing => {
+                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
+            }
+        }
+    }
+
+    let mut report = BlocksReport {
+        blocks: rows,
+        totals: BlocksReportTotals::default(),
+    };
+    report.totals.blocks = report.blocks.len();
+
+    for block in &report.blocks {
+        report.totals.entries = report.totals.entries.saturating_add(block.entries);
+        report.totals.input_tokens = report
+            .totals
+            .input_tokens
+            .saturating_add(block.input_tokens);
+        report.totals.output_tokens = report
+            .totals
+            .output_tokens
+            .saturating_add(block.output_tokens);
+        report.totals.cache_creation_input_tokens = report
+            .totals
+            .cache_creation_input_tokens
+            .saturating_add(block.cache_creation_input_tokens);
+        report.totals.cache_read_input_tokens = report
+            .totals
+            .cache_read_input_tokens
+            .saturating_add(block.cache_read_input_tokens);
+        report.totals.total_tokens = report
+            .totals
+            .total_tokens
+            .saturating_add(block.total_tokens);
+        report.totals.total_cost_usd += block.total_cost_usd;
+        report.totals.entries_with_raw_cost = report
+            .totals
+            .entries_with_raw_cost
+            .saturating_add(block.entries_with_raw_cost);
+        report.totals.entries_with_calculated_cost = report
+            .totals
+            .entries_with_calculated_cost
+            .saturating_add(block.entries_with_calculated_cost);
+        report.totals.entries_with_missing_cost = report
+            .totals
+            .entries_with_missing_cost
+            .saturating_add(block.entries_with_missing_cost);
     }
 
     report
@@ -1175,8 +1329,195 @@ pub fn render_session_report_table(
     lines.join("\n") + "\n"
 }
 
+#[must_use]
+pub fn render_blocks_report_json(
+    report: &BlocksReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"mode\": \"blocks\",\n");
+
+    if report.blocks.is_empty() {
+        out.push_str("  \"blocks\": [],\n");
+    } else {
+        out.push_str("  \"blocks\": [\n");
+        for (index, block) in report.blocks.iter().enumerate() {
+            out.push_str("    {\n");
+            out.push_str(&format!(
+                "      \"block_start\": \"{}\",\n",
+                json_escape(&block.block_start)
+            ));
+            out.push_str(&format!(
+                "      \"block_end\": \"{}\",\n",
+                json_escape(&block.block_end)
+            ));
+            out.push_str(&format!(
+                "      \"first_event_at\": \"{}\",\n",
+                json_escape(&block.first_event_at)
+            ));
+            out.push_str(&format!(
+                "      \"last_event_at\": \"{}\",\n",
+                json_escape(&block.last_event_at)
+            ));
+            out.push_str(&format!("      \"entries\": {},\n", block.entries));
+            out.push_str("      \"tokens\": {\n");
+            out.push_str(&format!("        \"input\": {},\n", block.input_tokens));
+            out.push_str(&format!("        \"output\": {},\n", block.output_tokens));
+            out.push_str(&format!(
+                "        \"cache_creation_input\": {},\n",
+                block.cache_creation_input_tokens
+            ));
+            out.push_str(&format!(
+                "        \"cache_read_input\": {},\n",
+                block.cache_read_input_tokens
+            ));
+            out.push_str(&format!("        \"total\": {}\n", block.total_tokens));
+            out.push_str("      },\n");
+            out.push_str("      \"cost\": {\n");
+            out.push_str(&format!(
+                "        \"usd\": {},\n",
+                json_number(block.total_cost_usd)
+            ));
+            out.push_str(&format!(
+                "        \"raw_entries\": {},\n",
+                block.entries_with_raw_cost
+            ));
+            out.push_str(&format!(
+                "        \"calculated_entries\": {},\n",
+                block.entries_with_calculated_cost
+            ));
+            out.push_str(&format!(
+                "        \"missing_entries\": {}\n",
+                block.entries_with_missing_cost
+            ));
+            out.push_str("      }\n");
+            out.push_str("    }");
+            if index + 1 != report.blocks.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("  ],\n");
+    }
+
+    out.push_str("  \"totals\": {\n");
+    out.push_str(&format!("    \"blocks\": {},\n", report.totals.blocks));
+    out.push_str(&format!("    \"entries\": {},\n", report.totals.entries));
+    out.push_str("    \"tokens\": {\n");
+    out.push_str(&format!(
+        "      \"input\": {},\n",
+        report.totals.input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"output\": {},\n",
+        report.totals.output_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_creation_input\": {},\n",
+        report.totals.cache_creation_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_read_input\": {},\n",
+        report.totals.cache_read_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"total\": {}\n",
+        report.totals.total_tokens
+    ));
+    out.push_str("    },\n");
+    out.push_str("    \"cost\": {\n");
+    out.push_str(&format!(
+        "      \"usd\": {},\n",
+        json_number(report.totals.total_cost_usd)
+    ));
+    out.push_str(&format!(
+        "      \"raw_entries\": {},\n",
+        report.totals.entries_with_raw_cost
+    ));
+    out.push_str(&format!(
+        "      \"calculated_entries\": {},\n",
+        report.totals.entries_with_calculated_cost
+    ));
+    out.push_str(&format!(
+        "      \"missing_entries\": {}\n",
+        report.totals.entries_with_missing_cost
+    ));
+    out.push_str("    }\n");
+    out.push_str("  },\n");
+
+    out.push_str("  \"warnings\": {\n");
+    out.push_str(&format!(
+        "    \"discovery\": {},\n",
+        discovery_warning_count
+    ));
+    out.push_str(&format!("    \"parse\": {}\n", parse_warning_count));
+    out.push_str("  }\n");
+    out.push_str("}\n");
+
+    out
+}
+
+#[must_use]
+pub fn render_blocks_report_table(
+    report: &BlocksReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(
+        "BLOCK_START           BLOCK_END             ENTRIES INPUT OUTPUT CACHE_CREATE CACHE_READ TOTAL COST_USD"
+            .to_owned(),
+    );
+
+    for block in &report.blocks {
+        lines.push(format!(
+            "{} {} {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+            block.block_start,
+            block.block_end,
+            block.entries,
+            block.input_tokens,
+            block.output_tokens,
+            block.cache_creation_input_tokens,
+            block.cache_read_input_tokens,
+            block.total_tokens,
+            json_number(block.total_cost_usd)
+        ));
+    }
+
+    lines.push(format!(
+        "TOTAL                                    {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+        report.totals.entries,
+        report.totals.input_tokens,
+        report.totals.output_tokens,
+        report.totals.cache_creation_input_tokens,
+        report.totals.cache_read_input_tokens,
+        report.totals.total_tokens,
+        json_number(report.totals.total_cost_usd)
+    ));
+    lines.push(format!(
+        "WARNINGS discovery={} parse={}",
+        discovery_warning_count, parse_warning_count
+    ));
+
+    lines.join("\n") + "\n"
+}
+
 fn utc_day_label_from_unix_ms(unix_ms: i64) -> String {
     utc_day_label_from_days_since_epoch(unix_ms_to_days_since_epoch(unix_ms))
+}
+
+fn utc_timestamp_label_from_unix_ms(unix_ms: i64) -> String {
+    let unix_seconds = unix_ms.div_euclid(1_000);
+    let days_since_epoch = unix_seconds.div_euclid(86_400);
+    let seconds_of_day = unix_seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days_since_epoch);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 fn utc_day_label_from_days_since_epoch(days_since_epoch: i64) -> String {
@@ -1663,6 +2004,139 @@ mod tests {
         assert!(rendered.contains("\"mode\": \"session\""));
         assert!(rendered.contains("\"session_id\": \"session-a\""));
         assert!(rendered.contains("\"project\": \"alpha\""));
+        assert!(rendered.contains("\"usd\": 0.123456"));
+        assert!(rendered.contains("\"discovery\": 1"));
+        assert!(rendered.contains("\"parse\": 2"));
+    }
+
+    #[test]
+    fn builds_blocks_with_rolling_five_hour_windows() {
+        let events = vec![
+            test_event(
+                1_773_158_400_000,
+                Some("claude-sonnet"),
+                Some(0.09),
+                60,
+                30,
+                0,
+                10,
+            ),
+            test_event(
+                1_773_145_800_000,
+                Some("claude-sonnet"),
+                None,
+                25,
+                10,
+                5,
+                15,
+            ),
+            test_event(
+                1_773_136_800_000,
+                Some("claude-sonnet"),
+                Some(0.12),
+                100,
+                50,
+                0,
+                0,
+            ),
+            test_event(
+                1_773_195_000_000,
+                Some("claude-sonnet"),
+                Some(0.05),
+                30,
+                10,
+                0,
+                0,
+            ),
+            test_event(1_773_174_600_000, Some("unknown-model"), None, 15, 5, 0, 0),
+            test_event(
+                1_773_154_740_000,
+                Some("claude-sonnet"),
+                Some(0.06),
+                40,
+                20,
+                0,
+                0,
+            ),
+        ];
+
+        let report = build_blocks_report(&events, CostMode::Auto, &PricingCatalog::new());
+
+        assert_eq!(report.blocks.len(), 3);
+
+        assert_eq!(report.blocks[0].block_start, "2026-03-10T10:00:00Z");
+        assert_eq!(report.blocks[0].block_end, "2026-03-10T15:00:00Z");
+        assert_eq!(report.blocks[0].entries, 3);
+        assert_eq!(report.blocks[0].total_tokens, 265);
+        assert_eq!(report.blocks[0].entries_with_raw_cost, 2);
+        assert_eq!(report.blocks[0].entries_with_missing_cost, 1);
+        assert_eq!(report.blocks[0].total_cost_usd, 0.18);
+
+        assert_eq!(report.blocks[1].block_start, "2026-03-10T16:00:00Z");
+        assert_eq!(report.blocks[1].block_end, "2026-03-10T21:00:00Z");
+        assert_eq!(report.blocks[1].entries, 2);
+        assert_eq!(report.blocks[1].total_tokens, 120);
+        assert_eq!(report.blocks[1].entries_with_raw_cost, 1);
+        assert_eq!(report.blocks[1].entries_with_missing_cost, 1);
+        assert_eq!(report.blocks[1].total_cost_usd, 0.09);
+
+        assert_eq!(report.blocks[2].block_start, "2026-03-11T02:10:00Z");
+        assert_eq!(report.blocks[2].block_end, "2026-03-11T07:10:00Z");
+        assert_eq!(report.blocks[2].entries, 1);
+        assert_eq!(report.blocks[2].total_tokens, 40);
+        assert_eq!(report.blocks[2].entries_with_raw_cost, 1);
+        assert_eq!(report.blocks[2].entries_with_missing_cost, 0);
+        assert_eq!(report.blocks[2].total_cost_usd, 0.05);
+
+        assert_eq!(report.totals.blocks, 3);
+        assert_eq!(report.totals.entries, 6);
+        assert_eq!(report.totals.total_tokens, 425);
+        assert_eq!(report.totals.entries_with_raw_cost, 4);
+        assert_eq!(report.totals.entries_with_missing_cost, 2);
+        assert_eq!(report.totals.total_cost_usd, 0.32);
+    }
+
+    #[test]
+    fn renders_blocks_json_shape_deterministically() {
+        let report = BlocksReport {
+            blocks: vec![BlocksReportBlock {
+                block_start: "2026-03-10T10:00:00Z".to_owned(),
+                block_end: "2026-03-10T15:00:00Z".to_owned(),
+                first_event_at: "2026-03-10T10:00:00Z".to_owned(),
+                last_event_at: "2026-03-10T12:30:00Z".to_owned(),
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            }],
+            totals: BlocksReportTotals {
+                blocks: 1,
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            },
+        };
+
+        let rendered = render_blocks_report_json(&report, 1, 2);
+
+        assert!(rendered.contains("\"mode\": \"blocks\""));
+        assert!(rendered.contains("\"block_start\": \"2026-03-10T10:00:00Z\""));
+        assert!(rendered.contains("\"block_end\": \"2026-03-10T15:00:00Z\""));
+        assert!(rendered.contains("\"first_event_at\": \"2026-03-10T10:00:00Z\""));
+        assert!(rendered.contains("\"last_event_at\": \"2026-03-10T12:30:00Z\""));
         assert!(rendered.contains("\"usd\": 0.123456"));
         assert!(rendered.contains("\"discovery\": 1"));
         assert!(rendered.contains("\"parse\": 2"));

@@ -1,0 +1,3 @@
+{"timestamp":"2026-03-10T10:00:00Z","type":"assistant","session_id":"session-a","project":"team-alpha","model":"claude-sonnet","usage":{"input_tokens":100,"output_tokens":50},"cost_usd":0.12}
+{"timestamp":"2026-03-10T12:30:00Z","type":"assistant","session_id":"session-a","project":"team-alpha","usage":{"input_tokens":25,"output_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":15}}
+{"timestamp":"2026-03-11T02:10:00Z","type":"assistant","session":{"id":"session-a"},"project_name":"team-alpha","usage":{"prompt_tokens":30,"completion_tokens":10},"total_cost_usd":0.05}
