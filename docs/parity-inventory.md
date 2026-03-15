@@ -59,10 +59,10 @@
 
 ### Discovery and data-root behavior
 
-- [ ] Default root discovery merges both `~/.config/claude/projects` and `~/.claude/projects`
-- [ ] `CLAUDE_CONFIG_DIR` supports one custom root
-- [ ] `CLAUDE_CONFIG_DIR` supports comma-separated multiple roots with aggregation
-- [ ] Invalid/unreadable roots are handled defensively without corrupting totals
+- [x] Default root discovery merges both `~/.config/claude/projects` and `~/.claude/projects`
+- [x] `CLAUDE_CONFIG_DIR` supports one custom root
+- [x] `CLAUDE_CONFIG_DIR` supports comma-separated multiple roots with aggregation
+- [x] Invalid/unreadable roots are handled defensively without corrupting totals
 
 ### Configuration file behavior
 
