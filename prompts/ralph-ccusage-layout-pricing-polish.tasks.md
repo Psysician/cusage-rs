@@ -1,6 +1,6 @@
 # Ralph Tasks
 
-- [x] Audit the current human-readable report output and pricing flow against the existing fixtures so the remaining work is anchored in actual gaps, not assumptions.
+- [ ] Audit the current human-readable report output and pricing flow against the existing fixtures so the remaining work is anchored in actual gaps, not assumptions.
 - [ ] Add a populated default pricing catalog for Claude models plus common aliases/provider-prefixed names, and wire every report/statusline path to use it instead of an empty `PricingCatalog`.
 - [ ] Preserve explicit raw/calculated/missing cost provenance so known models calculate real USD totals while unknown models remain visibly unresolved.
 - [ ] Redesign the default human-readable layouts for `daily`, `weekly`, `monthly`, `session`, and `blocks` so they have intentional headers, aligned columns, readable totals, and still deterministic output.
