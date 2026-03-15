@@ -22,6 +22,8 @@ pub struct DailyReportDay {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -37,6 +39,8 @@ pub struct DailyReportTotals {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -59,6 +63,8 @@ pub struct WeeklyReportWeek {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -74,6 +80,8 @@ pub struct WeeklyReportTotals {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -95,6 +103,8 @@ pub struct MonthlyReportMonth {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -110,6 +120,8 @@ pub struct MonthlyReportTotals {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -132,6 +144,8 @@ pub struct SessionReportSession {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -147,6 +161,8 @@ pub struct SessionReportTotals {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -171,6 +187,8 @@ pub struct BlocksReportBlock {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -186,6 +204,8 @@ pub struct BlocksReportTotals {
     pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
@@ -195,7 +215,17 @@ pub struct BlocksReportTotals {
 pub struct StatuslineReport {
     pub model: Option<String>,
     pub session_cost_usd: f64,
+    pub session_raw_cost_usd: f64,
+    pub session_calculated_cost_usd: f64,
+    pub session_entries_with_raw_cost: usize,
+    pub session_entries_with_calculated_cost: usize,
+    pub session_entries_with_missing_cost: usize,
     pub today_cost_usd: f64,
+    pub today_raw_cost_usd: f64,
+    pub today_calculated_cost_usd: f64,
+    pub today_entries_with_raw_cost: usize,
+    pub today_entries_with_calculated_cost: usize,
+    pub today_entries_with_missing_cost: usize,
     pub session_input_tokens: u64,
     pub active_block: Option<StatuslineReportBlock>,
 }
@@ -205,6 +235,11 @@ pub struct StatuslineReportBlock {
     pub block_start: String,
     pub block_end: String,
     pub cost_usd: f64,
+    pub raw_cost_usd: f64,
+    pub calculated_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
     pub elapsed_ms: i64,
     pub remaining_ms: i64,
     pub burn_rate_usd_per_hour: f64,
@@ -221,6 +256,31 @@ enum StatuslineSessionMarker {
     SessionId(String),
     Project(String),
     Fallback,
+}
+
+fn apply_resolved_cost(
+    total_cost_usd: &mut f64,
+    raw_cost_usd: &mut f64,
+    calculated_cost_usd: &mut f64,
+    entries_with_raw_cost: &mut usize,
+    entries_with_calculated_cost: &mut usize,
+    entries_with_missing_cost: &mut usize,
+    resolved: crate::pricing::ResolvedCost,
+) {
+    *total_cost_usd += resolved.cost_usd;
+    match resolved.source {
+        CostSource::Raw => {
+            *raw_cost_usd += resolved.cost_usd;
+            *entries_with_raw_cost = entries_with_raw_cost.saturating_add(1);
+        }
+        CostSource::Calculated => {
+            *calculated_cost_usd += resolved.cost_usd;
+            *entries_with_calculated_cost = entries_with_calculated_cost.saturating_add(1);
+        }
+        CostSource::Missing => {
+            *entries_with_missing_cost = entries_with_missing_cost.saturating_add(1);
+        }
+    }
 }
 
 #[must_use]
@@ -254,19 +314,15 @@ pub fn build_daily_report(
             .saturating_add(total_tokens_for_usage(&event.usage));
 
         let resolved = resolve_event_cost(event, cost_mode, pricing);
-        row.total_cost_usd += resolved.cost_usd;
-        match resolved.source {
-            CostSource::Raw => {
-                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
-            }
-            CostSource::Calculated => {
-                row.entries_with_calculated_cost =
-                    row.entries_with_calculated_cost.saturating_add(1)
-            }
-            CostSource::Missing => {
-                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
-            }
-        }
+        apply_resolved_cost(
+            &mut row.total_cost_usd,
+            &mut row.raw_cost_usd,
+            &mut row.calculated_cost_usd,
+            &mut row.entries_with_raw_cost,
+            &mut row.entries_with_calculated_cost,
+            &mut row.entries_with_missing_cost,
+            resolved,
+        );
     }
 
     let mut report = DailyReport {
@@ -292,6 +348,8 @@ pub fn build_daily_report(
             .saturating_add(day.cache_read_input_tokens);
         report.totals.total_tokens = report.totals.total_tokens.saturating_add(day.total_tokens);
         report.totals.total_cost_usd += day.total_cost_usd;
+        report.totals.raw_cost_usd += day.raw_cost_usd;
+        report.totals.calculated_cost_usd += day.calculated_cost_usd;
         report.totals.entries_with_raw_cost = report
             .totals
             .entries_with_raw_cost
@@ -343,19 +401,15 @@ pub fn build_weekly_report(
             .saturating_add(total_tokens_for_usage(&event.usage));
 
         let resolved = resolve_event_cost(event, cost_mode, pricing);
-        row.total_cost_usd += resolved.cost_usd;
-        match resolved.source {
-            CostSource::Raw => {
-                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
-            }
-            CostSource::Calculated => {
-                row.entries_with_calculated_cost =
-                    row.entries_with_calculated_cost.saturating_add(1)
-            }
-            CostSource::Missing => {
-                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
-            }
-        }
+        apply_resolved_cost(
+            &mut row.total_cost_usd,
+            &mut row.raw_cost_usd,
+            &mut row.calculated_cost_usd,
+            &mut row.entries_with_raw_cost,
+            &mut row.entries_with_calculated_cost,
+            &mut row.entries_with_missing_cost,
+            resolved,
+        );
     }
 
     let mut report = WeeklyReport {
@@ -381,6 +435,8 @@ pub fn build_weekly_report(
             .saturating_add(week.cache_read_input_tokens);
         report.totals.total_tokens = report.totals.total_tokens.saturating_add(week.total_tokens);
         report.totals.total_cost_usd += week.total_cost_usd;
+        report.totals.raw_cost_usd += week.raw_cost_usd;
+        report.totals.calculated_cost_usd += week.calculated_cost_usd;
         report.totals.entries_with_raw_cost = report
             .totals
             .entries_with_raw_cost
@@ -429,19 +485,15 @@ pub fn build_monthly_report(
             .saturating_add(total_tokens_for_usage(&event.usage));
 
         let resolved = resolve_event_cost(event, cost_mode, pricing);
-        row.total_cost_usd += resolved.cost_usd;
-        match resolved.source {
-            CostSource::Raw => {
-                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
-            }
-            CostSource::Calculated => {
-                row.entries_with_calculated_cost =
-                    row.entries_with_calculated_cost.saturating_add(1)
-            }
-            CostSource::Missing => {
-                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
-            }
-        }
+        apply_resolved_cost(
+            &mut row.total_cost_usd,
+            &mut row.raw_cost_usd,
+            &mut row.calculated_cost_usd,
+            &mut row.entries_with_raw_cost,
+            &mut row.entries_with_calculated_cost,
+            &mut row.entries_with_missing_cost,
+            resolved,
+        );
     }
 
     let mut report = MonthlyReport {
@@ -473,6 +525,8 @@ pub fn build_monthly_report(
             .total_tokens
             .saturating_add(month.total_tokens);
         report.totals.total_cost_usd += month.total_cost_usd;
+        report.totals.raw_cost_usd += month.raw_cost_usd;
+        report.totals.calculated_cost_usd += month.calculated_cost_usd;
         report.totals.entries_with_raw_cost = report
             .totals
             .entries_with_raw_cost
@@ -527,19 +581,15 @@ pub fn build_session_report(
             .saturating_add(total_tokens_for_usage(&event.usage));
 
         let resolved = resolve_event_cost(event, cost_mode, pricing);
-        row.total_cost_usd += resolved.cost_usd;
-        match resolved.source {
-            CostSource::Raw => {
-                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
-            }
-            CostSource::Calculated => {
-                row.entries_with_calculated_cost =
-                    row.entries_with_calculated_cost.saturating_add(1)
-            }
-            CostSource::Missing => {
-                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
-            }
-        }
+        apply_resolved_cost(
+            &mut row.total_cost_usd,
+            &mut row.raw_cost_usd,
+            &mut row.calculated_cost_usd,
+            &mut row.entries_with_raw_cost,
+            &mut row.entries_with_calculated_cost,
+            &mut row.entries_with_missing_cost,
+            resolved,
+        );
     }
 
     let mut report = SessionReport {
@@ -571,6 +621,8 @@ pub fn build_session_report(
             .total_tokens
             .saturating_add(session.total_tokens);
         report.totals.total_cost_usd += session.total_cost_usd;
+        report.totals.raw_cost_usd += session.raw_cost_usd;
+        report.totals.calculated_cost_usd += session.calculated_cost_usd;
         report.totals.entries_with_raw_cost = report
             .totals
             .entries_with_raw_cost
@@ -642,19 +694,15 @@ pub fn build_blocks_report(
             .saturating_add(total_tokens_for_usage(&event.usage));
 
         let resolved = resolve_event_cost(event, cost_mode, pricing);
-        row.total_cost_usd += resolved.cost_usd;
-        match resolved.source {
-            CostSource::Raw => {
-                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
-            }
-            CostSource::Calculated => {
-                row.entries_with_calculated_cost =
-                    row.entries_with_calculated_cost.saturating_add(1)
-            }
-            CostSource::Missing => {
-                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
-            }
-        }
+        apply_resolved_cost(
+            &mut row.total_cost_usd,
+            &mut row.raw_cost_usd,
+            &mut row.calculated_cost_usd,
+            &mut row.entries_with_raw_cost,
+            &mut row.entries_with_calculated_cost,
+            &mut row.entries_with_missing_cost,
+            resolved,
+        );
     }
 
     let mut report = BlocksReport {
@@ -686,6 +734,8 @@ pub fn build_blocks_report(
             .total_tokens
             .saturating_add(block.total_tokens);
         report.totals.total_cost_usd += block.total_cost_usd;
+        report.totals.raw_cost_usd += block.raw_cost_usd;
+        report.totals.calculated_cost_usd += block.calculated_cost_usd;
         report.totals.entries_with_raw_cost = report
             .totals
             .entries_with_raw_cost
@@ -728,19 +778,40 @@ pub fn build_statusline_report(
     let mut latest_active_ms: Option<i64> = None;
     let mut block_start_ms: Option<i64> = None;
     let mut block_cost_usd = 0.0;
+    let mut block_raw_cost_usd = 0.0;
+    let mut block_calculated_cost_usd = 0.0;
+    let mut block_entries_with_raw_cost = 0usize;
+    let mut block_entries_with_calculated_cost = 0usize;
+    let mut block_entries_with_missing_cost = 0usize;
 
     for event in &sorted {
         let resolved = resolve_event_cost(event, cost_mode, pricing);
         let event_day = utc_day_label_from_unix_ms(event.occurred_at_unix_ms);
         if event_day == latest_day {
-            report.today_cost_usd += resolved.cost_usd;
+            apply_resolved_cost(
+                &mut report.today_cost_usd,
+                &mut report.today_raw_cost_usd,
+                &mut report.today_calculated_cost_usd,
+                &mut report.today_entries_with_raw_cost,
+                &mut report.today_entries_with_calculated_cost,
+                &mut report.today_entries_with_missing_cost,
+                resolved,
+            );
         }
 
         if !event_matches_statusline_marker(event, &marker) {
             continue;
         }
 
-        report.session_cost_usd += resolved.cost_usd;
+        apply_resolved_cost(
+            &mut report.session_cost_usd,
+            &mut report.session_raw_cost_usd,
+            &mut report.session_calculated_cost_usd,
+            &mut report.session_entries_with_raw_cost,
+            &mut report.session_entries_with_calculated_cost,
+            &mut report.session_entries_with_missing_cost,
+            resolved,
+        );
         report.session_input_tokens = report
             .session_input_tokens
             .saturating_add(event.usage.input_tokens);
@@ -760,8 +831,21 @@ pub fn build_statusline_report(
         if should_start_new {
             block_start_ms = Some(event.occurred_at_unix_ms);
             block_cost_usd = 0.0;
+            block_raw_cost_usd = 0.0;
+            block_calculated_cost_usd = 0.0;
+            block_entries_with_raw_cost = 0;
+            block_entries_with_calculated_cost = 0;
+            block_entries_with_missing_cost = 0;
         }
-        block_cost_usd += resolved.cost_usd;
+        apply_resolved_cost(
+            &mut block_cost_usd,
+            &mut block_raw_cost_usd,
+            &mut block_calculated_cost_usd,
+            &mut block_entries_with_raw_cost,
+            &mut block_entries_with_calculated_cost,
+            &mut block_entries_with_missing_cost,
+            resolved,
+        );
     }
 
     if report.model.is_none() {
@@ -785,6 +869,11 @@ pub fn build_statusline_report(
             block_start: utc_timestamp_label_from_unix_ms(start_ms),
             block_end: utc_timestamp_label_from_unix_ms(block_end_ms),
             cost_usd: block_cost_usd,
+            raw_cost_usd: block_raw_cost_usd,
+            calculated_cost_usd: block_calculated_cost_usd,
+            entries_with_raw_cost: block_entries_with_raw_cost,
+            entries_with_calculated_cost: block_entries_with_calculated_cost,
+            entries_with_missing_cost: block_entries_with_missing_cost,
             elapsed_ms,
             remaining_ms,
             burn_rate_usd_per_hour,
@@ -1931,6 +2020,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -1944,6 +2035,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2019,6 +2112,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2032,6 +2127,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2108,6 +2205,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2121,6 +2220,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2225,6 +2326,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2238,6 +2341,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2356,6 +2461,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2369,6 +2476,8 @@ mod tests {
                 cache_read_input_tokens: 8,
                 total_tokens: 26,
                 total_cost_usd: 0.123_456,
+                raw_cost_usd: 0.023_456,
+                calculated_cost_usd: 0.1,
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
@@ -2441,6 +2550,16 @@ mod tests {
         assert_eq!(report.model.as_deref(), Some("claude-sonnet"));
         assert!((report.session_cost_usd - 0.17).abs() < 0.000_000_001);
         assert!((report.today_cost_usd - 0.05).abs() < 0.000_000_001);
+        assert!((report.session_raw_cost_usd - 0.17).abs() < 0.000_000_001);
+        assert!((report.session_calculated_cost_usd - 0.0).abs() < 0.000_000_001);
+        assert_eq!(report.session_entries_with_raw_cost, 2);
+        assert_eq!(report.session_entries_with_calculated_cost, 0);
+        assert_eq!(report.session_entries_with_missing_cost, 1);
+        assert!((report.today_raw_cost_usd - 0.05).abs() < 0.000_000_001);
+        assert!((report.today_calculated_cost_usd - 0.0).abs() < 0.000_000_001);
+        assert_eq!(report.today_entries_with_raw_cost, 1);
+        assert_eq!(report.today_entries_with_calculated_cost, 0);
+        assert_eq!(report.today_entries_with_missing_cost, 0);
         assert_eq!(report.session_input_tokens, 155);
 
         let block = report
@@ -2450,6 +2569,11 @@ mod tests {
         assert_eq!(block.block_start, "2026-03-11T02:10:00Z");
         assert_eq!(block.block_end, "2026-03-11T07:10:00Z");
         assert!((block.cost_usd - 0.05).abs() < 0.000_000_001);
+        assert!((block.raw_cost_usd - 0.05).abs() < 0.000_000_001);
+        assert!((block.calculated_cost_usd - 0.0).abs() < 0.000_000_001);
+        assert_eq!(block.entries_with_raw_cost, 1);
+        assert_eq!(block.entries_with_calculated_cost, 0);
+        assert_eq!(block.entries_with_missing_cost, 0);
         assert_eq!(block.elapsed_ms, 0);
         assert_eq!(block.remaining_ms, 18_000_000);
         assert!((block.burn_rate_usd_per_hour - 0.0).abs() < 0.000_000_001);
@@ -2460,12 +2584,27 @@ mod tests {
         let report = StatuslineReport {
             model: Some("claude-sonnet".to_owned()),
             session_cost_usd: 0.17,
+            session_raw_cost_usd: 0.17,
+            session_calculated_cost_usd: 0.0,
+            session_entries_with_raw_cost: 2,
+            session_entries_with_calculated_cost: 0,
+            session_entries_with_missing_cost: 1,
             today_cost_usd: 0.05,
+            today_raw_cost_usd: 0.05,
+            today_calculated_cost_usd: 0.0,
+            today_entries_with_raw_cost: 1,
+            today_entries_with_calculated_cost: 0,
+            today_entries_with_missing_cost: 0,
             session_input_tokens: 155,
             active_block: Some(StatuslineReportBlock {
                 block_start: "2026-03-11T02:10:00Z".to_owned(),
                 block_end: "2026-03-11T07:10:00Z".to_owned(),
                 cost_usd: 0.05,
+                raw_cost_usd: 0.05,
+                calculated_cost_usd: 0.0,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 0,
+                entries_with_missing_cost: 0,
                 elapsed_ms: 0,
                 remaining_ms: 18_000_000,
                 burn_rate_usd_per_hour: 0.0,
