@@ -1,0 +1,43 @@
+{
+  "mode": "daily",
+  "days": [
+    {
+      "date": "2026-03-10",
+      "entries": 1,
+      "tokens": {
+        "input": 40,
+        "output": 20,
+        "cache_creation_input": 0,
+        "cache_read_input": 0,
+        "total": 60
+      },
+      "cost": {
+        "usd": 0.06,
+        "raw_entries": 1,
+        "calculated_entries": 0,
+        "missing_entries": 0
+      }
+    }
+  ],
+  "totals": {
+    "days": 1,
+    "entries": 1,
+    "tokens": {
+      "input": 40,
+      "output": 20,
+      "cache_creation_input": 0,
+      "cache_read_input": 0,
+      "total": 60
+    },
+    "cost": {
+      "usd": 0.06,
+      "raw_entries": 1,
+      "calculated_entries": 0,
+      "missing_entries": 0
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 0
+  }
+}
