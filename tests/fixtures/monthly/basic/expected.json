@@ -1,0 +1,43 @@
+{
+  "mode": "monthly",
+  "months": [
+    {
+      "month": "2026-03",
+      "entries": 4,
+      "tokens": {
+        "input": 225,
+        "output": 110,
+        "cache_creation_input": 5,
+        "cache_read_input": 25,
+        "total": 365
+      },
+      "cost": {
+        "usd": 0.27,
+        "raw_entries": 3,
+        "calculated_entries": 0,
+        "missing_entries": 1
+      }
+    }
+  ],
+  "totals": {
+    "months": 1,
+    "entries": 4,
+    "tokens": {
+      "input": 225,
+      "output": 110,
+      "cache_creation_input": 5,
+      "cache_read_input": 25,
+      "total": 365
+    },
+    "cost": {
+      "usd": 0.27,
+      "raw_entries": 3,
+      "calculated_entries": 0,
+      "missing_entries": 1
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 0
+  }
+}

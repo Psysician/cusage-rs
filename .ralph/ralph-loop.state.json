@@ -1,6 +1,6 @@
 {
   "active": true,
-  "iteration": 6,
+  "iteration": 7,
   "minIterations": 5,
   "maxIterations": 150,
   "completionPromise": "RUST_REWRITE_COMPLETE",

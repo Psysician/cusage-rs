@@ -203,9 +203,45 @@
         "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 7,
+      "startedAt": "2026-03-15T17:03:49.674Z",
+      "endedAt": "2026-03-15T17:10:35.382Z",
+      "durationMs": 405597,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "0": 3,
+        "1": 2,
+        "2": 5,
+        "codex-lb": 2,
+        "tests": 5,
+        "unittests": 4,
+        "for": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/main.rs",
+        "src/report.rs",
+        "tests/fixtures/monthly/",
+        "tests/parity_monthly.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\"text\": \"Found 5 contextual memories and 888 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=1.135 salience=0.400 id=2827bae1-2d61-4903-80ab-75457280ab13\\nAdded unit tests for week",
+        "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs ccusage rewrite monthly report mode parity fixtures deterministic json recent progress\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": ",
+        "error: unexpected argument 'report::tests::renders_monthly_json_shape_deterministically' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 64.58s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 2967433,
+  "totalDurationMs": 3373030,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 8 contextual memories and 867 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
@@ -241,10 +277,16 @@
       "\"text\": \"Found 8 contextual memories and 883 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs weekly report mode parity fixtures de": 1,
       "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "\"text\": \"Found 5 contextual memories and 888 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs ccusage rewrite monthly report mode p": 1,
+      "error: unexpected argument 'report::tests::renders_monthly_json_shape_deterministically' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 64.58s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -77,6 +77,42 @@ pub struct WeeklyReportTotals {
     pub entries_with_missing_cost: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MonthlyReport {
+    pub months: Vec<MonthlyReportMonth>,
+    pub totals: MonthlyReportTotals,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MonthlyReportMonth {
+    pub month: String,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MonthlyReportTotals {
+    pub months: usize,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
 #[must_use]
 pub fn build_daily_report(
     events: &[UsageEvent],
@@ -247,6 +283,98 @@ pub fn build_weekly_report(
             .totals
             .entries_with_missing_cost
             .saturating_add(week.entries_with_missing_cost);
+    }
+
+    report
+}
+
+#[must_use]
+pub fn build_monthly_report(
+    events: &[UsageEvent],
+    cost_mode: CostMode,
+    pricing: &PricingCatalog,
+) -> MonthlyReport {
+    let mut grouped = BTreeMap::<i64, MonthlyReportMonth>::new();
+
+    for event in events {
+        let month_key = utc_month_key_from_unix_ms(event.occurred_at_unix_ms);
+        let row = grouped
+            .entry(month_key)
+            .or_insert_with(|| MonthlyReportMonth {
+                month: utc_month_label_from_month_key(month_key),
+                ..MonthlyReportMonth::default()
+            });
+
+        row.entries = row.entries.saturating_add(1);
+        row.input_tokens = row.input_tokens.saturating_add(event.usage.input_tokens);
+        row.output_tokens = row.output_tokens.saturating_add(event.usage.output_tokens);
+        row.cache_creation_input_tokens = row
+            .cache_creation_input_tokens
+            .saturating_add(event.usage.cache_creation_input_tokens);
+        row.cache_read_input_tokens = row
+            .cache_read_input_tokens
+            .saturating_add(event.usage.cache_read_input_tokens);
+        row.total_tokens = row
+            .total_tokens
+            .saturating_add(total_tokens_for_usage(&event.usage));
+
+        let resolved = resolve_event_cost(event, cost_mode, pricing);
+        row.total_cost_usd += resolved.cost_usd;
+        match resolved.source {
+            CostSource::Raw => {
+                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
+            }
+            CostSource::Calculated => {
+                row.entries_with_calculated_cost =
+                    row.entries_with_calculated_cost.saturating_add(1)
+            }
+            CostSource::Missing => {
+                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
+            }
+        }
+    }
+
+    let mut report = MonthlyReport {
+        months: grouped.into_values().collect(),
+        totals: MonthlyReportTotals::default(),
+    };
+    report.totals.months = report.months.len();
+
+    for month in &report.months {
+        report.totals.entries = report.totals.entries.saturating_add(month.entries);
+        report.totals.input_tokens = report
+            .totals
+            .input_tokens
+            .saturating_add(month.input_tokens);
+        report.totals.output_tokens = report
+            .totals
+            .output_tokens
+            .saturating_add(month.output_tokens);
+        report.totals.cache_creation_input_tokens = report
+            .totals
+            .cache_creation_input_tokens
+            .saturating_add(month.cache_creation_input_tokens);
+        report.totals.cache_read_input_tokens = report
+            .totals
+            .cache_read_input_tokens
+            .saturating_add(month.cache_read_input_tokens);
+        report.totals.total_tokens = report
+            .totals
+            .total_tokens
+            .saturating_add(month.total_tokens);
+        report.totals.total_cost_usd += month.total_cost_usd;
+        report.totals.entries_with_raw_cost = report
+            .totals
+            .entries_with_raw_cost
+            .saturating_add(month.entries_with_raw_cost);
+        report.totals.entries_with_calculated_cost = report
+            .totals
+            .entries_with_calculated_cost
+            .saturating_add(month.entries_with_calculated_cost);
+        report.totals.entries_with_missing_cost = report
+            .totals
+            .entries_with_missing_cost
+            .saturating_add(month.entries_with_missing_cost);
     }
 
     report
@@ -578,6 +706,165 @@ pub fn render_weekly_report_table(
     lines.join("\n") + "\n"
 }
 
+#[must_use]
+pub fn render_monthly_report_json(
+    report: &MonthlyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"mode\": \"monthly\",\n");
+
+    if report.months.is_empty() {
+        out.push_str("  \"months\": [],\n");
+    } else {
+        out.push_str("  \"months\": [\n");
+        for (index, month) in report.months.iter().enumerate() {
+            out.push_str("    {\n");
+            out.push_str(&format!(
+                "      \"month\": \"{}\",\n",
+                json_escape(&month.month)
+            ));
+            out.push_str(&format!("      \"entries\": {},\n", month.entries));
+            out.push_str("      \"tokens\": {\n");
+            out.push_str(&format!("        \"input\": {},\n", month.input_tokens));
+            out.push_str(&format!("        \"output\": {},\n", month.output_tokens));
+            out.push_str(&format!(
+                "        \"cache_creation_input\": {},\n",
+                month.cache_creation_input_tokens
+            ));
+            out.push_str(&format!(
+                "        \"cache_read_input\": {},\n",
+                month.cache_read_input_tokens
+            ));
+            out.push_str(&format!("        \"total\": {}\n", month.total_tokens));
+            out.push_str("      },\n");
+            out.push_str("      \"cost\": {\n");
+            out.push_str(&format!(
+                "        \"usd\": {},\n",
+                json_number(month.total_cost_usd)
+            ));
+            out.push_str(&format!(
+                "        \"raw_entries\": {},\n",
+                month.entries_with_raw_cost
+            ));
+            out.push_str(&format!(
+                "        \"calculated_entries\": {},\n",
+                month.entries_with_calculated_cost
+            ));
+            out.push_str(&format!(
+                "        \"missing_entries\": {}\n",
+                month.entries_with_missing_cost
+            ));
+            out.push_str("      }\n");
+            out.push_str("    }");
+            if index + 1 != report.months.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("  ],\n");
+    }
+
+    out.push_str("  \"totals\": {\n");
+    out.push_str(&format!("    \"months\": {},\n", report.totals.months));
+    out.push_str(&format!("    \"entries\": {},\n", report.totals.entries));
+    out.push_str("    \"tokens\": {\n");
+    out.push_str(&format!(
+        "      \"input\": {},\n",
+        report.totals.input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"output\": {},\n",
+        report.totals.output_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_creation_input\": {},\n",
+        report.totals.cache_creation_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_read_input\": {},\n",
+        report.totals.cache_read_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"total\": {}\n",
+        report.totals.total_tokens
+    ));
+    out.push_str("    },\n");
+    out.push_str("    \"cost\": {\n");
+    out.push_str(&format!(
+        "      \"usd\": {},\n",
+        json_number(report.totals.total_cost_usd)
+    ));
+    out.push_str(&format!(
+        "      \"raw_entries\": {},\n",
+        report.totals.entries_with_raw_cost
+    ));
+    out.push_str(&format!(
+        "      \"calculated_entries\": {},\n",
+        report.totals.entries_with_calculated_cost
+    ));
+    out.push_str(&format!(
+        "      \"missing_entries\": {}\n",
+        report.totals.entries_with_missing_cost
+    ));
+    out.push_str("    }\n");
+    out.push_str("  },\n");
+
+    out.push_str("  \"warnings\": {\n");
+    out.push_str(&format!(
+        "    \"discovery\": {},\n",
+        discovery_warning_count
+    ));
+    out.push_str(&format!("    \"parse\": {}\n", parse_warning_count));
+    out.push_str("  }\n");
+    out.push_str("}\n");
+
+    out
+}
+
+#[must_use]
+pub fn render_monthly_report_table(
+    report: &MonthlyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push("MONTH    ENTRIES INPUT OUTPUT CACHE_CREATE CACHE_READ TOTAL COST_USD".to_owned());
+
+    for month in &report.months {
+        lines.push(format!(
+            "{} {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+            month.month,
+            month.entries,
+            month.input_tokens,
+            month.output_tokens,
+            month.cache_creation_input_tokens,
+            month.cache_read_input_tokens,
+            month.total_tokens,
+            json_number(month.total_cost_usd)
+        ));
+    }
+
+    lines.push(format!(
+        "TOTAL    {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+        report.totals.entries,
+        report.totals.input_tokens,
+        report.totals.output_tokens,
+        report.totals.cache_creation_input_tokens,
+        report.totals.cache_read_input_tokens,
+        report.totals.total_tokens,
+        json_number(report.totals.total_cost_usd)
+    ));
+    lines.push(format!(
+        "WARNINGS discovery={} parse={}",
+        discovery_warning_count, parse_warning_count
+    ));
+
+    lines.join("\n") + "\n"
+}
+
 fn utc_day_label_from_unix_ms(unix_ms: i64) -> String {
     utc_day_label_from_days_since_epoch(unix_ms_to_days_since_epoch(unix_ms))
 }
@@ -599,6 +886,19 @@ fn utc_week_start_days_from_unix_ms(unix_ms: i64) -> i64 {
 
 fn utc_week_end_days_from_week_start_days(week_start_days: i64) -> i64 {
     week_start_days.saturating_add(6)
+}
+
+fn utc_month_key_from_unix_ms(unix_ms: i64) -> i64 {
+    let days_since_epoch = unix_ms_to_days_since_epoch(unix_ms);
+    let (year, month, _) = civil_from_days(days_since_epoch);
+    year.saturating_mul(12)
+        .saturating_add(i64::from(month).saturating_sub(1))
+}
+
+fn utc_month_label_from_month_key(month_key: i64) -> String {
+    let year = month_key.div_euclid(12);
+    let month = month_key.rem_euclid(12) + 1;
+    format!("{year:04}-{month:02}")
 }
 
 fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
@@ -816,6 +1116,94 @@ mod tests {
         assert!(rendered.contains("\"mode\": \"weekly\""));
         assert!(rendered.contains("\"week_start\": \"2026-03-09\""));
         assert!(rendered.contains("\"week_end\": \"2026-03-15\""));
+        assert!(rendered.contains("\"usd\": 0.123456"));
+        assert!(rendered.contains("\"discovery\": 1"));
+        assert!(rendered.contains("\"parse\": 2"));
+    }
+
+    #[test]
+    fn builds_monthly_buckets_in_utc_order() {
+        let mut pricing = PricingCatalog::new();
+        pricing.insert(
+            "claude-sonnet",
+            ModelPricing::from_per_million(1.0, 1.0, 1.0, 1.0),
+        );
+
+        let events = vec![
+            test_event(
+                1_772_319_600_000,
+                Some("claude-sonnet"),
+                Some(0.2),
+                10,
+                0,
+                0,
+                0,
+            ),
+            test_event(
+                1_772_323_200_000,
+                Some("claude-sonnet"),
+                None,
+                1_000_000,
+                0,
+                0,
+                0,
+            ),
+            test_event(1_775_001_600_000, Some("unknown-model"), None, 3, 4, 0, 0),
+        ];
+
+        let report = build_monthly_report(&events, CostMode::Auto, &pricing);
+
+        assert_eq!(report.months.len(), 3);
+        assert_eq!(report.months[0].month, "2026-02");
+        assert_eq!(report.months[0].entries, 1);
+        assert_eq!(report.months[1].month, "2026-03");
+        assert_eq!(report.months[1].entries, 1);
+        assert_eq!(report.months[1].entries_with_calculated_cost, 1);
+        assert_eq!(report.months[2].month, "2026-04");
+        assert_eq!(report.months[2].entries, 1);
+        assert_eq!(report.months[2].entries_with_missing_cost, 1);
+        assert_eq!(report.totals.entries, 3);
+        assert_eq!(report.totals.months, 3);
+        assert_eq!(report.totals.entries_with_raw_cost, 1);
+        assert_eq!(report.totals.entries_with_calculated_cost, 1);
+        assert_eq!(report.totals.entries_with_missing_cost, 1);
+    }
+
+    #[test]
+    fn renders_monthly_json_shape_deterministically() {
+        let report = MonthlyReport {
+            months: vec![MonthlyReportMonth {
+                month: "2026-03".to_owned(),
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            }],
+            totals: MonthlyReportTotals {
+                months: 1,
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            },
+        };
+
+        let rendered = render_monthly_report_json(&report, 1, 2);
+
+        assert!(rendered.contains("\"mode\": \"monthly\""));
+        assert!(rendered.contains("\"month\": \"2026-03\""));
         assert!(rendered.contains("\"usd\": 0.123456"));
         assert!(rendered.contains("\"discovery\": 1"));
         assert!(rendered.contains("\"parse\": 2"));

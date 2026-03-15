@@ -4,7 +4,8 @@ use cusage_rs::discovery::discover_session_files;
 use cusage_rs::parser::parse_jsonl_files;
 use cusage_rs::pricing::{CostMode, PricingCatalog};
 use cusage_rs::report::{
-    build_daily_report, build_weekly_report, render_daily_report_json, render_daily_report_table,
+    build_daily_report, build_monthly_report, build_weekly_report, render_daily_report_json,
+    render_daily_report_table, render_monthly_report_json, render_monthly_report_table,
     render_weekly_report_json, render_weekly_report_table,
 };
 use std::ffi::OsString;
@@ -79,7 +80,7 @@ fn describe_command(command: &Command) -> String {
     match command {
         Command::Daily(args) => render_daily_command(args),
         Command::Weekly(args) => render_weekly_command(args),
-        Command::Monthly(args) => render_report_placeholder("monthly", args),
+        Command::Monthly(args) => render_monthly_command(args),
         Command::Session(args) => render_report_placeholder("session", args),
         Command::Blocks(args) => render_report_placeholder("blocks", args),
         Command::Statusline(args) => {
@@ -116,6 +117,19 @@ fn render_weekly_command(args: &ReportArgs) -> String {
         render_weekly_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
     } else {
         render_weekly_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
+    }
+}
+
+fn render_monthly_command(args: &ReportArgs) -> String {
+    let data_roots = DataRootOptions::from_environment().resolve_project_roots();
+    let discovered = discover_session_files(&data_roots);
+    let parsed = parse_jsonl_files(&discovered.files);
+    let report = build_monthly_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+
+    if args.json {
+        render_monthly_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+    } else {
+        render_monthly_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
     }
 }
 
@@ -168,23 +182,13 @@ mod tests {
     }
 
     #[test]
-    fn monthly_flags_round_trip_into_placeholder() {
-        let output = describe_command(&Command::Monthly(ReportArgs {
-            since: Some("20250525".to_owned()),
-            until: Some("20250530".to_owned()),
-            json: true,
-            breakdown: true,
-            compact: false,
-            instances: true,
-            project: Some("demo".to_owned()),
-            timezone: Some("UTC".to_owned()),
-            locale: Some("en-US".to_owned()),
-        }));
-
-        assert!(output.contains("monthly"));
-        assert!(output.contains("20250525"));
-        assert!(output.contains("Requested JSON output contract."));
-        assert!(output.contains("Project filter: demo"));
+    fn parses_monthly_command() {
+        let cli = Cli::parse_from(["cusage-rs", "monthly", "--json"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        assert!(matches!(
+            command,
+            Command::Monthly(ReportArgs { json: true, .. })
+        ));
     }
 
     #[test]
