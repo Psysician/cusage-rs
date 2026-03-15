@@ -2520,6 +2520,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn test_event_with_identity(
         occurred_at_unix_ms: i64,
         session_id: Option<&str>,
