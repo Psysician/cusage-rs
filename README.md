@@ -1,54 +1,55 @@
 # cusage-rs
 
-`cusage-rs` is a fresh Rust rewrite scaffold for [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage).
+`cusage-rs` is a clean-room Rust rewrite of the public [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage) CLI contract for Claude usage/session data.
 
-This repository is intentionally separate from the existing [`Psysician/cusage`](https://github.com/Psysician/cusage) Node-based fork. The Rust codebase starts as a clean-room implementation: upstream behavior is the reference, but upstream source code is not copied into this repository.
+This repository is intentionally separate from Node-based forks. Upstream behavior and docs are the reference contract; upstream source code is not copied.
 
-## Current Status
+## Status
 
-- Cargo binary project with CI, lint/test commands, and issue templates
-- Initial CLI contract scaffold for `daily`, `monthly`, `session`, `blocks`, and `statusline`
-- Upstream parity checklist refreshed in `docs/parity-inventory.md` from current public docs snapshot
-- Project docs capturing parity targets, architecture boundaries, and milestone acceptance criteria
+Core rewrite goals are implemented for the main report pipeline:
 
-## Planned Compatibility
+- report modes: `daily`, `weekly`, `monthly`, `session`, `blocks`, `statusline`
+- shared report flags: `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--instances`, `--project`, `--timezone`, `--locale`, `--config`, `--offline`, `--no-offline`
+- statusline flags: `--json`, `--config`, `--offline`, `--no-offline`
+- data discovery from Claude project roots (`~/.config/claude/projects`, `~/.claude/projects`, and `CLAUDE_CONFIG_DIR` overrides)
+- config-file loading/precedence across legacy, user, local, environment, custom config path, and CLI args
+- deterministic JSON output with fixture-driven parity checks
 
-The first parity line targets the upstream `ccusage` CLI for Claude usage data:
+## Verification and Parity Coverage
 
-- report modes `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`
-- shared/global flags including `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--mode`, `--offline`, `--timezone`, `--locale`, `--config`, and debug options
-- command-specific flags such as `--instances`, `--project`, `--start-of-week`, `--id`, and block/statusline refresh controls
-- local JSONL discovery rooted in both `~/.config/claude/projects` and `~/.claude/projects`, including `CLAUDE_CONFIG_DIR` overrides
-- documented config-file hierarchy and precedence behavior (`.ccusage/ccusage.json`, user config, and legacy config)
-
-Fork-only behavior from the current `Psysician/cusage` repository, including Codex aggregation, is out of scope for this bootstrap and will be reconsidered only after upstream parity is established.
-
-## Development
-
-Prerequisites:
-
-- Rust `1.93.0`
-- `make`
-
-Verification:
+Use:
 
 ```bash
 make verify
 ```
 
-Current binary behavior is intentionally narrow:
+Parity/fixture coverage includes:
 
-```bash
-cargo run -- daily --since 20250525 --json
-```
+- mode fixtures: `tests/parity_daily.rs`, `tests/parity_weekly.rs`, `tests/parity_monthly.rs`, `tests/parity_session.rs`, `tests/parity_blocks.rs`, `tests/parity_statusline.rs`
+- CLI flag/error combinations: `tests/parity_cli.rs`
+- malformed JSONL tolerance and deterministic warning counts via `tests/fixtures/**/malformed`
 
-The command surface is present. Discovery, parser normalization, and pricing/derived-metric primitives are implemented; report-mode aggregation and rendering are still pending.
+## Explicit Residual Deltas
+
+Documented upstream options not yet implemented in this rewrite:
+
+- global flags: `--mode`, `--debug`, `--debug-samples`, `--jq`
+- weekly: `--start-of-week`
+- session: `--id`
+- blocks: `--active`, `--recent`, `--token-limit`, `--session-length`, `--live`, `--refresh-interval`
+- statusline: `--cache`, `--refresh-interval`
+
+Additional explicit deltas:
+
+- `--timezone` currently accepts UTC/GMT/Z and fixed signed offsets (`+HH`, `+HHMM`, `+HH:MM`, and `UTC/GMT` prefixed forms), not IANA zone names such as `Europe/Berlin`
+- `--offline` is parsed and merged through config/env/CLI precedence, but is currently operationally neutral because this rewrite does not perform network fetches in the report pipeline
+- binary name is currently `cusage-rs`
 
 ## Repository Docs
 
-- `docs/parity-inventory.md`: upstream command and behavior contract to match
-- `docs/architecture-notes.md`: intended runtime pipeline and module boundaries
-- `plans/m1-bootstrap-and-contract-harness.md`: first implementation milestone and acceptance criteria
+- `docs/parity-inventory.md`: contract checklist, test coverage, and residual deltas
+- `docs/architecture-notes.md`: implemented runtime pipeline and module boundaries
+- `plans/m1-bootstrap-and-contract-harness.md`: initial bootstrap milestone record
 
 ## License
 

@@ -5,7 +5,9 @@
 - Behavioral target: [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage)
 - Snapshot date: `2026-03-15`
 - Rewrite constraint: clean-room Rust implementation
-- Legend: `[x]` implemented and parity-tested, `[ ]` not yet parity-complete (including scaffold-only coverage)
+- Legend:
+  - `[x]` implemented and covered by deterministic tests/fixtures
+  - `[ ]` explicit residual delta vs public upstream contract docs
 
 ## Upstream contract sources used
 
@@ -18,44 +20,66 @@
 
 ## Current local baseline
 
-- Current Rust CLI scaffold covers `daily`, `monthly`, `session`, `blocks`, and `statusline` command parsing in `src/main.rs`.
-- `weekly` mode and most runtime behavior remain unimplemented.
-- Discovery/parsing and pricing primitives are implemented locally; report aggregation, mode-specific behavior, and rendering parity remain incomplete.
+- CLI commands implemented: `daily`, `weekly`, `monthly`, `session`, `blocks`, `statusline`
+- End-to-end runtime pipeline implemented:
+  - filesystem discovery
+  - JSONL parsing + normalization
+  - pricing and derived metrics
+  - report aggregation by mode
+  - table/JSON rendering
+- Deterministic JSON golden fixtures exist for every report mode.
+- Deterministic table fixtures cover statusline hook output plus representative shared-flag table behavior.
+
+## Verification coverage
+
+- `tests/parity_daily.rs`
+- `tests/parity_weekly.rs`
+- `tests/parity_monthly.rs`
+- `tests/parity_session.rs`
+- `tests/parity_blocks.rs`
+- `tests/parity_statusline.rs`
+- `tests/parity_cli.rs`:
+  - shared-flag behavior (`--since`, `--until`, `--project`, `--timezone`, `--compact`, `--breakdown`, `--instances`, `--locale`)
+  - deterministic output checks
+  - malformed input behavior
+  - expected CLI errors for invalid date range/date format/unsupported timezone
 
 ## Parity checklist
 
 ### Report modes
 
-- [ ] `daily`
-- [ ] `weekly`
-- [ ] `monthly`
-- [ ] `session`
-- [ ] `blocks`
-- [ ] `statusline`
+- [x] `daily`
+- [x] `weekly`
+- [x] `monthly`
+- [x] `session`
+- [x] `blocks`
+- [x] `statusline`
 
 ### Shared/global CLI contract
 
-- [ ] `--since YYYYMMDD`
-- [ ] `--until YYYYMMDD`
-- [ ] `--json` / `-j`
-- [ ] `--breakdown` / `-b`
-- [ ] `--compact` (README-documented compact table mode)
+- [x] `--since YYYYMMDD`
+- [x] `--until YYYYMMDD`
+- [x] `--json` / `-j`
+- [x] `--breakdown` / `-b`
+- [x] `--compact`
 - [ ] `--mode auto|calculate|display`
-- [ ] `--offline` / `-O`
-- [ ] `--timezone <tz>` / `-z`
-- [ ] `--locale <locale>` / `-l`
-- [ ] `--config <path>`
+- [x] `--offline` / `-O` and `--no-offline`
+- [x] `--timezone <tz>` / `-z` (fixed-offset forms; see residual deltas)
+- [x] `--locale <locale>` / `-l`
+- [x] `--config <path>`
 - [ ] `--debug`
 - [ ] `--debug-samples <n>`
 - [ ] `--jq <filter>` (JSON post-processing)
 
 ### Command-specific CLI contract
 
-- [ ] `daily`: `--instances` / `-i`, `--project <name>` / `-p`
+- [x] `daily`: `--instances` / `-i`, `--project <name>` / `-p`
 - [ ] `weekly`: `--start-of-week monday|sunday`
-- [ ] `session`: `--id <session-id>`, `--project <name>`
+- [x] `session`: `--project <name>`
+- [ ] `session`: `--id <session-id>`
 - [ ] `blocks`: `--active`, `--recent`, `--token-limit`, `--session-length`, `--live`, `--refresh-interval`
-- [ ] `statusline`: `--offline`, `--cache`, `--refresh-interval`
+- [x] `statusline`: `--offline`, `--json`, `--config`
+- [ ] `statusline`: `--cache`, `--refresh-interval`
 
 ### Discovery and data-root behavior
 
@@ -66,27 +90,24 @@
 
 ### Configuration file behavior
 
-- [ ] Detect local config at `.ccusage/ccusage.json`
-- [ ] Detect user config at `~/.config/claude/ccusage.json`
-- [ ] Detect legacy config at `~/.claude/ccusage.json`
-- [ ] Honor `--config <path>` override
-- [ ] Merge `defaults` and command-specific overrides
-- [ ] Apply documented precedence: CLI args > `--config` > environment variables > local config > user config > legacy config > built-in defaults
+- [x] Detect local config at `.ccusage/ccusage.json`
+- [x] Detect user config at `~/.config/claude/ccusage.json`
+- [x] Detect legacy config at `~/.claude/ccusage.json`
+- [x] Honor `--config <path>` override
+- [x] Merge `defaults` and command-specific overrides
+- [x] Apply precedence: CLI args > `--config` > environment variables > local config > user config > legacy config > built-in defaults
 
 ### Output and determinism
 
-- [ ] Deterministic JSON output for all report modes
-- [ ] Deterministic table rendering with stable ordering and totals
-- [ ] Deterministic timezone/locale behavior for grouping and display
-- [ ] Golden/parity fixtures for representative mode + flag combinations
+- [x] Deterministic JSON output for all report modes
+- [x] Deterministic table output for statusline and representative shared-flag table combinations
+- [x] Deterministic timezone/locale behavior for implemented flags
+- [x] Golden/parity fixtures for representative mode + flag combinations
+- [x] Malformed-input handling with deterministic warning counts
 
-## Upstream doc divergences to track
+## Explicit residual deltas
 
-- README (`apps/ccusage/README.md`) documents `--compact` and does not list `weekly` in the quick usage block.
-- `ccusage.com/guide/cli-options` documents `weekly` and additional global options (`--mode`, `--config`, `--debug`, `--debug-samples`, `--jq`) but does not document `--compact` on that page.
-- Until black-box parity tests confirm runtime behavior, this checklist tracks the union of these public docs and flags the discrepancy explicitly.
-
-## Explicit bootstrap deferrals
-
-- Provider-specific behavior beyond the Claude session-file contract (for example OpenAI/Codex-specific features in other ecosystems) remains out of scope until core Claude parity is complete.
-- Release packaging and alias strategy for final binary naming remains out of scope for the current milestone.
+- Missing options listed as unchecked above remain out of scope for the current rewrite milestone and are not exposed by the Rust CLI.
+- `--timezone` does not currently accept IANA zone names (for example `Europe/Berlin`); only UTC/GMT/Z and signed fixed offsets are supported.
+- `--offline` is parsed and precedence-aware, but currently operationally neutral because this rewrite does not make network calls in the report pipeline.
+- CLI binary name remains `cusage-rs`.
