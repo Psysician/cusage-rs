@@ -1,0 +1,44 @@
+{
+  "mode": "session",
+  "sessions": [
+    {
+      "session_id": "demo-1",
+      "project": "demo",
+      "entries": 1,
+      "tokens": {
+        "input": 10,
+        "output": 5,
+        "cache_creation_input": 0,
+        "cache_read_input": 0,
+        "total": 15
+      },
+      "cost": {
+        "usd": 0.01,
+        "raw_entries": 1,
+        "calculated_entries": 0,
+        "missing_entries": 0
+      }
+    }
+  ],
+  "totals": {
+    "sessions": 1,
+    "entries": 1,
+    "tokens": {
+      "input": 10,
+      "output": 5,
+      "cache_creation_input": 0,
+      "cache_read_input": 0,
+      "total": 15
+    },
+    "cost": {
+      "usd": 0.01,
+      "raw_entries": 1,
+      "calculated_entries": 0,
+      "missing_entries": 0
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 3
+  }
+}

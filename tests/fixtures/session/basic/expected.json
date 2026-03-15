@@ -1,0 +1,62 @@
+{
+  "mode": "session",
+  "sessions": [
+    {
+      "session_id": "session-a",
+      "project": "team-alpha",
+      "entries": 2,
+      "tokens": {
+        "input": 125,
+        "output": 60,
+        "cache_creation_input": 5,
+        "cache_read_input": 15,
+        "total": 205
+      },
+      "cost": {
+        "usd": 0.12,
+        "raw_entries": 1,
+        "calculated_entries": 0,
+        "missing_entries": 1
+      }
+    },
+    {
+      "session_id": "session-b",
+      "project": "team-beta",
+      "entries": 2,
+      "tokens": {
+        "input": 100,
+        "output": 50,
+        "cache_creation_input": 0,
+        "cache_read_input": 10,
+        "total": 160
+      },
+      "cost": {
+        "usd": 0.15,
+        "raw_entries": 2,
+        "calculated_entries": 0,
+        "missing_entries": 0
+      }
+    }
+  ],
+  "totals": {
+    "sessions": 2,
+    "entries": 4,
+    "tokens": {
+      "input": 225,
+      "output": 110,
+      "cache_creation_input": 5,
+      "cache_read_input": 25,
+      "total": 365
+    },
+    "cost": {
+      "usd": 0.27,
+      "raw_entries": 3,
+      "calculated_entries": 0,
+      "missing_entries": 1
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 0
+  }
+}

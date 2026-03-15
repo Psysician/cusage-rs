@@ -113,6 +113,49 @@ pub struct MonthlyReportTotals {
     pub entries_with_missing_cost: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SessionReport {
+    pub sessions: Vec<SessionReportSession>,
+    pub totals: SessionReportTotals,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SessionReportSession {
+    pub session_id: Option<String>,
+    pub project: Option<String>,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SessionReportTotals {
+    pub sessions: usize,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SessionGroupKey {
+    bucket: u8,
+    value: String,
+}
+
 #[must_use]
 pub fn build_daily_report(
     events: &[UsageEvent],
@@ -375,6 +418,106 @@ pub fn build_monthly_report(
             .totals
             .entries_with_missing_cost
             .saturating_add(month.entries_with_missing_cost);
+    }
+
+    report
+}
+
+#[must_use]
+pub fn build_session_report(
+    events: &[UsageEvent],
+    cost_mode: CostMode,
+    pricing: &PricingCatalog,
+) -> SessionReport {
+    let mut grouped = BTreeMap::<SessionGroupKey, SessionReportSession>::new();
+
+    for event in events {
+        let key = session_group_key(event);
+        let row = grouped
+            .entry(key)
+            .or_insert_with(|| SessionReportSession {
+                session_id: normalized_optional_string(event.session_id.as_deref()),
+                project: normalized_optional_string(event.project.as_deref()),
+                ..SessionReportSession::default()
+            });
+
+        if row.session_id.is_none() {
+            row.session_id = normalized_optional_string(event.session_id.as_deref());
+        }
+        if row.project.is_none() {
+            row.project = normalized_optional_string(event.project.as_deref());
+        }
+
+        row.entries = row.entries.saturating_add(1);
+        row.input_tokens = row.input_tokens.saturating_add(event.usage.input_tokens);
+        row.output_tokens = row.output_tokens.saturating_add(event.usage.output_tokens);
+        row.cache_creation_input_tokens = row
+            .cache_creation_input_tokens
+            .saturating_add(event.usage.cache_creation_input_tokens);
+        row.cache_read_input_tokens = row
+            .cache_read_input_tokens
+            .saturating_add(event.usage.cache_read_input_tokens);
+        row.total_tokens = row
+            .total_tokens
+            .saturating_add(total_tokens_for_usage(&event.usage));
+
+        let resolved = resolve_event_cost(event, cost_mode, pricing);
+        row.total_cost_usd += resolved.cost_usd;
+        match resolved.source {
+            CostSource::Raw => {
+                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
+            }
+            CostSource::Calculated => {
+                row.entries_with_calculated_cost =
+                    row.entries_with_calculated_cost.saturating_add(1)
+            }
+            CostSource::Missing => {
+                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
+            }
+        }
+    }
+
+    let mut report = SessionReport {
+        sessions: grouped.into_values().collect(),
+        totals: SessionReportTotals::default(),
+    };
+    report.totals.sessions = report.sessions.len();
+
+    for session in &report.sessions {
+        report.totals.entries = report.totals.entries.saturating_add(session.entries);
+        report.totals.input_tokens = report
+            .totals
+            .input_tokens
+            .saturating_add(session.input_tokens);
+        report.totals.output_tokens = report
+            .totals
+            .output_tokens
+            .saturating_add(session.output_tokens);
+        report.totals.cache_creation_input_tokens = report
+            .totals
+            .cache_creation_input_tokens
+            .saturating_add(session.cache_creation_input_tokens);
+        report.totals.cache_read_input_tokens = report
+            .totals
+            .cache_read_input_tokens
+            .saturating_add(session.cache_read_input_tokens);
+        report.totals.total_tokens = report
+            .totals
+            .total_tokens
+            .saturating_add(session.total_tokens);
+        report.totals.total_cost_usd += session.total_cost_usd;
+        report.totals.entries_with_raw_cost = report
+            .totals
+            .entries_with_raw_cost
+            .saturating_add(session.entries_with_raw_cost);
+        report.totals.entries_with_calculated_cost = report
+            .totals
+            .entries_with_calculated_cost
+            .saturating_add(session.entries_with_calculated_cost);
+        report.totals.entries_with_missing_cost = report
+            .totals
+            .entries_with_missing_cost
+            .saturating_add(session.entries_with_missing_cost);
     }
 
     report
@@ -865,6 +1008,173 @@ pub fn render_monthly_report_table(
     lines.join("\n") + "\n"
 }
 
+#[must_use]
+pub fn render_session_report_json(
+    report: &SessionReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"mode\": \"session\",\n");
+
+    if report.sessions.is_empty() {
+        out.push_str("  \"sessions\": [],\n");
+    } else {
+        out.push_str("  \"sessions\": [\n");
+        for (index, session) in report.sessions.iter().enumerate() {
+            out.push_str("    {\n");
+            out.push_str(&format!(
+                "      \"session_id\": {},\n",
+                json_optional_string(session.session_id.as_deref())
+            ));
+            out.push_str(&format!(
+                "      \"project\": {},\n",
+                json_optional_string(session.project.as_deref())
+            ));
+            out.push_str(&format!("      \"entries\": {},\n", session.entries));
+            out.push_str("      \"tokens\": {\n");
+            out.push_str(&format!("        \"input\": {},\n", session.input_tokens));
+            out.push_str(&format!("        \"output\": {},\n", session.output_tokens));
+            out.push_str(&format!(
+                "        \"cache_creation_input\": {},\n",
+                session.cache_creation_input_tokens
+            ));
+            out.push_str(&format!(
+                "        \"cache_read_input\": {},\n",
+                session.cache_read_input_tokens
+            ));
+            out.push_str(&format!("        \"total\": {}\n", session.total_tokens));
+            out.push_str("      },\n");
+            out.push_str("      \"cost\": {\n");
+            out.push_str(&format!(
+                "        \"usd\": {},\n",
+                json_number(session.total_cost_usd)
+            ));
+            out.push_str(&format!(
+                "        \"raw_entries\": {},\n",
+                session.entries_with_raw_cost
+            ));
+            out.push_str(&format!(
+                "        \"calculated_entries\": {},\n",
+                session.entries_with_calculated_cost
+            ));
+            out.push_str(&format!(
+                "        \"missing_entries\": {}\n",
+                session.entries_with_missing_cost
+            ));
+            out.push_str("      }\n");
+            out.push_str("    }");
+            if index + 1 != report.sessions.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("  ],\n");
+    }
+
+    out.push_str("  \"totals\": {\n");
+    out.push_str(&format!("    \"sessions\": {},\n", report.totals.sessions));
+    out.push_str(&format!("    \"entries\": {},\n", report.totals.entries));
+    out.push_str("    \"tokens\": {\n");
+    out.push_str(&format!(
+        "      \"input\": {},\n",
+        report.totals.input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"output\": {},\n",
+        report.totals.output_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_creation_input\": {},\n",
+        report.totals.cache_creation_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_read_input\": {},\n",
+        report.totals.cache_read_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"total\": {}\n",
+        report.totals.total_tokens
+    ));
+    out.push_str("    },\n");
+    out.push_str("    \"cost\": {\n");
+    out.push_str(&format!(
+        "      \"usd\": {},\n",
+        json_number(report.totals.total_cost_usd)
+    ));
+    out.push_str(&format!(
+        "      \"raw_entries\": {},\n",
+        report.totals.entries_with_raw_cost
+    ));
+    out.push_str(&format!(
+        "      \"calculated_entries\": {},\n",
+        report.totals.entries_with_calculated_cost
+    ));
+    out.push_str(&format!(
+        "      \"missing_entries\": {}\n",
+        report.totals.entries_with_missing_cost
+    ));
+    out.push_str("    }\n");
+    out.push_str("  },\n");
+
+    out.push_str("  \"warnings\": {\n");
+    out.push_str(&format!(
+        "    \"discovery\": {},\n",
+        discovery_warning_count
+    ));
+    out.push_str(&format!("    \"parse\": {}\n", parse_warning_count));
+    out.push_str("  }\n");
+    out.push_str("}\n");
+
+    out
+}
+
+#[must_use]
+pub fn render_session_report_table(
+    report: &SessionReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(
+        "SESSION_ID          PROJECT             ENTRIES INPUT OUTPUT CACHE_CREATE CACHE_READ TOTAL COST_USD"
+            .to_owned(),
+    );
+
+    for session in &report.sessions {
+        lines.push(format!(
+            "{:<19} {:<19} {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+            session.session_id.as_deref().unwrap_or("-"),
+            session.project.as_deref().unwrap_or("-"),
+            session.entries,
+            session.input_tokens,
+            session.output_tokens,
+            session.cache_creation_input_tokens,
+            session.cache_read_input_tokens,
+            session.total_tokens,
+            json_number(session.total_cost_usd)
+        ));
+    }
+
+    lines.push(format!(
+        "TOTAL                                  {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+        report.totals.entries,
+        report.totals.input_tokens,
+        report.totals.output_tokens,
+        report.totals.cache_creation_input_tokens,
+        report.totals.cache_read_input_tokens,
+        report.totals.total_tokens,
+        json_number(report.totals.total_cost_usd)
+    ));
+    lines.push(format!(
+        "WARNINGS discovery={} parse={}",
+        discovery_warning_count, parse_warning_count
+    ));
+
+    lines.join("\n") + "\n"
+}
+
 fn utc_day_label_from_unix_ms(unix_ms: i64) -> String {
     utc_day_label_from_days_since_epoch(unix_ms_to_days_since_epoch(unix_ms))
 }
@@ -914,6 +1224,37 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let year = y + if month <= 2 { 1 } else { 0 };
 
     (year, month as u32, day as u32)
+}
+
+fn session_group_key(event: &UsageEvent) -> SessionGroupKey {
+    let session_id = normalized_optional_string(event.session_id.as_deref());
+    if let Some(value) = session_id {
+        return SessionGroupKey { bucket: 0, value };
+    }
+
+    let project = normalized_optional_string(event.project.as_deref());
+    if let Some(value) = project {
+        return SessionGroupKey { bucket: 1, value };
+    }
+
+    SessionGroupKey {
+        bucket: 2,
+        value: String::new(),
+    }
+}
+
+fn normalized_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn json_optional_string(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("\"{}\"", json_escape(value)),
+        None => "null".to_owned(),
+    }
 }
 
 fn json_escape(value: &str) -> String {
@@ -1209,6 +1550,124 @@ mod tests {
         assert!(rendered.contains("\"parse\": 2"));
     }
 
+    #[test]
+    fn builds_session_buckets_in_stable_order() {
+        let mut pricing = PricingCatalog::new();
+        pricing.insert(
+            "claude-sonnet",
+            ModelPricing::from_per_million(1.0, 1.0, 1.0, 1.0),
+        );
+
+        let events = vec![
+            test_event_with_identity(
+                1_773_057_600_000,
+                Some("session-b"),
+                Some("beta"),
+                Some("claude-sonnet"),
+                None,
+                1_000_000,
+                0,
+                0,
+                0,
+            ),
+            test_event_with_identity(
+                1_772_971_200_000,
+                Some("session-a"),
+                Some("alpha"),
+                Some("claude-sonnet"),
+                Some(0.2),
+                10,
+                0,
+                0,
+                0,
+            ),
+            test_event_with_identity(
+                1_773_057_600_001,
+                None,
+                Some("alpha"),
+                Some("unknown-model"),
+                None,
+                3,
+                4,
+                0,
+                0,
+            ),
+            test_event_with_identity(
+                1_773_057_600_002,
+                Some("session-b"),
+                None,
+                Some("unknown-model"),
+                None,
+                5,
+                6,
+                0,
+                0,
+            ),
+        ];
+
+        let report = build_session_report(&events, CostMode::Auto, &pricing);
+
+        assert_eq!(report.sessions.len(), 3);
+        assert_eq!(report.sessions[0].session_id.as_deref(), Some("session-a"));
+        assert_eq!(report.sessions[0].project.as_deref(), Some("alpha"));
+        assert_eq!(report.sessions[0].entries, 1);
+        assert_eq!(report.sessions[1].session_id.as_deref(), Some("session-b"));
+        assert_eq!(report.sessions[1].project.as_deref(), Some("beta"));
+        assert_eq!(report.sessions[1].entries, 2);
+        assert_eq!(report.sessions[1].entries_with_calculated_cost, 1);
+        assert_eq!(report.sessions[1].entries_with_missing_cost, 1);
+        assert_eq!(report.sessions[2].session_id, None);
+        assert_eq!(report.sessions[2].project.as_deref(), Some("alpha"));
+        assert_eq!(report.sessions[2].entries, 1);
+        assert_eq!(report.totals.entries, 4);
+        assert_eq!(report.totals.sessions, 3);
+        assert_eq!(report.totals.entries_with_raw_cost, 1);
+        assert_eq!(report.totals.entries_with_calculated_cost, 1);
+        assert_eq!(report.totals.entries_with_missing_cost, 2);
+    }
+
+    #[test]
+    fn renders_session_json_shape_deterministically() {
+        let report = SessionReport {
+            sessions: vec![SessionReportSession {
+                session_id: Some("session-a".to_owned()),
+                project: Some("alpha".to_owned()),
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            }],
+            totals: SessionReportTotals {
+                sessions: 1,
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            },
+        };
+
+        let rendered = render_session_report_json(&report, 1, 2);
+
+        assert!(rendered.contains("\"mode\": \"session\""));
+        assert!(rendered.contains("\"session_id\": \"session-a\""));
+        assert!(rendered.contains("\"project\": \"alpha\""));
+        assert!(rendered.contains("\"usd\": 0.123456"));
+        assert!(rendered.contains("\"discovery\": 1"));
+        assert!(rendered.contains("\"parse\": 2"));
+    }
+
     fn test_event(
         occurred_at_unix_ms: i64,
         model: Option<&str>,
@@ -1238,5 +1697,30 @@ mod tests {
             ),
             raw_cost_usd,
         }
+    }
+
+    fn test_event_with_identity(
+        occurred_at_unix_ms: i64,
+        session_id: Option<&str>,
+        project: Option<&str>,
+        model: Option<&str>,
+        raw_cost_usd: Option<f64>,
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
+    ) -> UsageEvent {
+        let mut event = test_event(
+            occurred_at_unix_ms,
+            model,
+            raw_cost_usd,
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+        );
+        event.session_id = session_id.map(str::to_owned);
+        event.project = project.map(str::to_owned);
+        event
     }
 }

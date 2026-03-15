@@ -7,7 +7,7 @@
 - [x] Implement `daily` report mode with deterministic JSON output and parity fixtures.
 - [x] Implement `weekly` report mode with deterministic JSON output and parity fixtures.
 - [x] Implement `monthly` report mode with deterministic JSON output and parity fixtures.
-- [ ] Implement `session` report mode with deterministic JSON output and parity fixtures.
+- [x] Implement `session` report mode with deterministic JSON output and parity fixtures.
 - [ ] Implement `blocks` report mode with deterministic JSON output and parity fixtures.
 - [ ] Implement `statusline` output mode and verify compact hook-oriented behavior.
 - [ ] Implement shared flags and filtering behavior: `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--instances`, `--project`, `--timezone`, `--locale`.
