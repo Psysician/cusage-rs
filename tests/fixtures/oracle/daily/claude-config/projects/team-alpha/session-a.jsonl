@@ -1,0 +1,4 @@
+{"timestamp":"2026-03-10T10:00:00Z","type":"assistant","sessionId":"session-a","message":{"id":"msg-1","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":20,"cache_read_input_tokens":10},"model":"claude-sonnet-4-6"},"requestId":"req-1"}
+{"timestamp":"2026-03-10T10:05:00Z","type":"assistant","sessionId":"session-a","message":{"id":"msg-1","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":20,"cache_read_input_tokens":10},"model":"claude-sonnet-4-6"},"requestId":"req-1"}
+{"timestamp":"2026-03-10T10:10:00Z","type":"progress","sessionId":"session-a","data":{"type":"hook_progress"}}
+{"timestamp":"2026-03-10T10:30:00Z","type":"custom_event","sessionId":"session-a","message":{"id":"msg-4","usage":{"input_tokens":5,"output_tokens":5,"cache_creation_input_tokens":5,"cache_read_input_tokens":0},"model":"claude-haiku-4-5-20251001"},"requestId":"req-4"}

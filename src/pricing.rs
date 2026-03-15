@@ -17,10 +17,28 @@ const CLAUDE_4_OPUS_ALIASES: &[&str] = &[
     "claude-opus",
     "anthropic.claude-opus-4-20250514-v1:0",
 ];
+const CLAUDE_4_5_OPUS_ALIASES: &[&str] = &["claude-opus-4-5"];
+const CLAUDE_4_6_OPUS_ALIASES: &[&str] = &[
+    "claude-opus-4-6",
+    "claude-opus-4-6-20260205",
+    "anthropic.claude-opus-4-6-v1",
+];
 const CLAUDE_4_SONNET_ALIASES: &[&str] = &[
     "claude-sonnet-4-20250514",
     "claude-sonnet-4",
     "anthropic.claude-sonnet-4-20250514-v1:0",
+];
+const CLAUDE_4_5_SONNET_ALIASES: &[&str] = &[
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-5-20250929-v1:0",
+    "anthropic.claude-sonnet-4-5-20250929-v1:0",
+];
+const CLAUDE_4_6_SONNET_ALIASES: &[&str] = &["claude-sonnet-4-6", "anthropic.claude-sonnet-4-6"];
+const CLAUDE_4_5_HAIKU_ALIASES: &[&str] = &[
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+    "anthropic.claude-haiku-4-5-20251001-v1:0",
 ];
 const CLAUDE_3_7_SONNET_ALIASES: &[&str] = &[
     "claude-3-7-sonnet-20250219",
@@ -177,17 +195,28 @@ impl PricingCatalog {
 
     #[must_use]
     pub fn with_default_claude_pricing(mut self) -> Self {
-        let claude_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
-        let claude_haiku_pricing = ModelPricing::from_per_million(0.8, 4.0, 1.0, 0.08);
+        let claude_4_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3)
+            .with_tiered_per_million(Some(6.0), Some(22.5), Some(7.5), Some(0.6));
+        let claude_3_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
+        let claude_4_haiku_pricing = ModelPricing::from_per_million(1.0, 5.0, 1.25, 0.1);
+        let claude_3_5_haiku_pricing = ModelPricing::from_per_million(0.8, 4.0, 1.0, 0.08);
         let claude_3_haiku_pricing = ModelPricing::from_per_million(0.25, 1.25, 0.3, 0.03);
-        let claude_opus_pricing = ModelPricing::from_per_million(15.0, 75.0, 18.75, 1.5);
+        let claude_4_opus_pricing = ModelPricing::from_per_million(15.0, 75.0, 18.75, 1.5);
+        let claude_4_5_opus_pricing = ModelPricing::from_per_million(5.0, 25.0, 6.25, 0.5);
+        let claude_4_6_opus_pricing = ModelPricing::from_per_million(5.0, 25.0, 6.25, 0.5)
+            .with_tiered_per_million(Some(10.0), Some(37.5), Some(12.5), Some(1.0));
 
-        self.insert_aliases(CLAUDE_4_OPUS_ALIASES, &claude_opus_pricing);
-        self.insert_aliases(CLAUDE_4_SONNET_ALIASES, &claude_sonnet_pricing);
-        self.insert_aliases(CLAUDE_3_7_SONNET_ALIASES, &claude_sonnet_pricing);
-        self.insert_aliases(CLAUDE_3_5_SONNET_ALIASES, &claude_sonnet_pricing);
-        self.insert_aliases(CLAUDE_3_5_HAIKU_ALIASES, &claude_haiku_pricing);
-        self.insert_aliases(CLAUDE_3_OPUS_ALIASES, &claude_opus_pricing);
+        self.insert_aliases(CLAUDE_4_OPUS_ALIASES, &claude_4_opus_pricing);
+        self.insert_aliases(CLAUDE_4_5_OPUS_ALIASES, &claude_4_5_opus_pricing);
+        self.insert_aliases(CLAUDE_4_6_OPUS_ALIASES, &claude_4_6_opus_pricing);
+        self.insert_aliases(CLAUDE_4_SONNET_ALIASES, &claude_4_sonnet_pricing);
+        self.insert_aliases(CLAUDE_4_5_SONNET_ALIASES, &claude_4_sonnet_pricing);
+        self.insert_aliases(CLAUDE_4_6_SONNET_ALIASES, &claude_4_sonnet_pricing);
+        self.insert_aliases(CLAUDE_3_7_SONNET_ALIASES, &claude_3_sonnet_pricing);
+        self.insert_aliases(CLAUDE_3_5_SONNET_ALIASES, &claude_3_sonnet_pricing);
+        self.insert_aliases(CLAUDE_4_5_HAIKU_ALIASES, &claude_4_haiku_pricing);
+        self.insert_aliases(CLAUDE_3_5_HAIKU_ALIASES, &claude_3_5_haiku_pricing);
+        self.insert_aliases(CLAUDE_3_OPUS_ALIASES, &claude_4_opus_pricing);
         self.insert_aliases(CLAUDE_3_HAIKU_ALIASES, &claude_3_haiku_pricing);
 
         self

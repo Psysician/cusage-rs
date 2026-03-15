@@ -1007,16 +1007,47 @@ enum TableAlign {
     Right,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct WarningCounts {
+    discovery: usize,
+    parse: usize,
+}
+
 fn cost_provenance_triplet(raw: usize, calculated: usize, missing: usize) -> String {
     format!("{raw}/{calculated}/{missing}")
 }
 
-fn table_border(widths: &[usize]) -> String {
-    let mut border = String::from("+");
-    for width in widths {
-        border.push_str(&"-".repeat(width.saturating_add(2)));
-        border.push('+');
+fn format_count_u64(value: u64) -> String {
+    format_count_str(&value.to_string())
+}
+
+fn format_count_usize(value: usize) -> String {
+    format_count_str(&value.to_string())
+}
+
+fn format_count_str(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + raw.len() / 3);
+    for (index, ch) in raw.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
     }
+    out.chars().rev().collect()
+}
+
+fn format_money_human(value: f64) -> String {
+    format!("${}", format_money_fixed_2(value))
+}
+
+fn table_border(widths: &[usize], left: char, join: char, right: char) -> String {
+    let mut border = String::from(left);
+    for width in widths {
+        border.push_str(&"─".repeat(width.saturating_add(2)));
+        border.push(join);
+    }
+    border.pop();
+    border.push(right);
     border
 }
 
@@ -1028,14 +1059,27 @@ fn format_table_cell(value: &str, width: usize, align: TableAlign) -> String {
 }
 
 fn render_table_row(cells: &[String], widths: &[usize], aligns: &[TableAlign]) -> String {
-    let mut row = String::from("|");
+    let mut row = String::from("│");
     for ((cell, width), align) in cells.iter().zip(widths).zip(aligns) {
         row.push(' ');
         row.push_str(&format_table_cell(cell, *width, *align));
         row.push(' ');
-        row.push('|');
+        row.push('│');
     }
     row
+}
+
+fn render_title_box(title: &str) -> Vec<String> {
+    let inner = format!("  {title}  ");
+    let width = inner.chars().count();
+
+    vec![
+        format!("╭{}╮", "─".repeat(width)),
+        format!("│{}│", " ".repeat(width)),
+        format!("│{inner}│"),
+        format!("│{}│", " ".repeat(width)),
+        format!("╰{}╯", "─".repeat(width)),
+    ]
 }
 
 fn render_human_report_table(
@@ -1045,8 +1089,7 @@ fn render_human_report_table(
     columns: &[(&str, TableAlign)],
     rows: &[Vec<String>],
     total_row: &[String],
-    discovery_warning_count: usize,
-    parse_warning_count: usize,
+    warnings: WarningCounts,
 ) -> String {
     let mut widths = columns
         .iter()
@@ -1072,27 +1115,29 @@ fn render_human_report_table(
         .collect::<Vec<_>>();
     let row_alignments = columns.iter().map(|(_, align)| *align).collect::<Vec<_>>();
     let header_alignments = vec![TableAlign::Left; columns.len()];
-    let border = table_border(&widths);
+    let top_border = table_border(&widths, '┌', '┬', '┐');
+    let mid_border = table_border(&widths, '├', '┼', '┤');
+    let bottom_border = table_border(&widths, '└', '┴', '┘');
 
-    let mut lines = vec![
-        title.to_owned(),
-        summary_line.to_owned(),
-        provenance_line.to_owned(),
-        String::new(),
-        border.clone(),
-        render_table_row(&header_cells, &widths, &header_alignments),
-        border.clone(),
-    ];
+    let mut lines = render_title_box(title);
+    lines.push(String::new());
+    lines.push(summary_line.to_owned());
+    lines.push(provenance_line.to_owned());
+    lines.push(String::new());
+    lines.push(top_border);
+    lines.push(render_table_row(&header_cells, &widths, &header_alignments));
+    lines.push(mid_border.clone());
 
     for row in rows {
         lines.push(render_table_row(row, &widths, &row_alignments));
     }
 
-    lines.push(border.clone());
+    lines.push(mid_border);
     lines.push(render_table_row(total_row, &widths, &row_alignments));
-    lines.push(border);
+    lines.push(bottom_border);
     lines.push(format!(
-        "Warnings: discovery={discovery_warning_count} parse={parse_warning_count}"
+        "Warnings: discovery={} parse={}",
+        warnings.discovery, warnings.parse
     ));
     lines.join("\n") + "\n"
 }
@@ -1121,13 +1166,13 @@ pub fn render_daily_report_table(
         .map(|day| {
             vec![
                 day.date.clone(),
-                day.entries.to_string(),
-                day.input_tokens.to_string(),
-                day.output_tokens.to_string(),
-                day.cache_creation_input_tokens.to_string(),
-                day.cache_read_input_tokens.to_string(),
-                day.total_tokens.to_string(),
-                json_number(day.total_cost_usd),
+                format_count_usize(day.entries),
+                format_count_u64(day.input_tokens),
+                format_count_u64(day.output_tokens),
+                format_count_u64(day.cache_creation_input_tokens),
+                format_count_u64(day.cache_read_input_tokens),
+                format_count_u64(day.total_tokens),
+                format_money_human(day.total_cost_usd),
                 cost_provenance_triplet(
                     day.entries_with_raw_cost,
                     day.entries_with_calculated_cost,
@@ -1138,14 +1183,14 @@ pub fn render_daily_report_table(
         .collect::<Vec<_>>();
 
     let total_row = vec![
-        "TOTAL".to_owned(),
-        report.totals.entries.to_string(),
-        report.totals.input_tokens.to_string(),
-        report.totals.output_tokens.to_string(),
-        report.totals.cache_creation_input_tokens.to_string(),
-        report.totals.cache_read_input_tokens.to_string(),
-        report.totals.total_tokens.to_string(),
-        json_number(report.totals.total_cost_usd),
+        "Total".to_owned(),
+        format_count_usize(report.totals.entries),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
         cost_provenance_triplet(
             report.totals.entries_with_raw_cost,
             report.totals.entries_with_calculated_cost,
@@ -1154,13 +1199,13 @@ pub fn render_daily_report_table(
     ];
 
     render_human_report_table(
-        "Daily Usage",
+        "Claude Code Token Usage Report - Daily",
         &format!(
             "Days: {} | Entries: {} | Tokens: {} | Cost USD: {}",
-            report.totals.days,
-            report.totals.entries,
-            report.totals.total_tokens,
-            json_number(report.totals.total_cost_usd)
+            format_count_usize(report.totals.days),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
         ),
         &format!(
             "Cost provenance (raw/calculated/missing entries): {}",
@@ -1173,8 +1218,10 @@ pub fn render_daily_report_table(
         &columns,
         &rows,
         &total_row,
-        discovery_warning_count,
-        parse_warning_count,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
     )
 }
 
@@ -1324,13 +1371,13 @@ pub fn render_weekly_report_table(
         .map(|week| {
             vec![
                 format!("{}..{}", week.week_start, week.week_end),
-                week.entries.to_string(),
-                week.input_tokens.to_string(),
-                week.output_tokens.to_string(),
-                week.cache_creation_input_tokens.to_string(),
-                week.cache_read_input_tokens.to_string(),
-                week.total_tokens.to_string(),
-                json_number(week.total_cost_usd),
+                format_count_usize(week.entries),
+                format_count_u64(week.input_tokens),
+                format_count_u64(week.output_tokens),
+                format_count_u64(week.cache_creation_input_tokens),
+                format_count_u64(week.cache_read_input_tokens),
+                format_count_u64(week.total_tokens),
+                format_money_human(week.total_cost_usd),
                 cost_provenance_triplet(
                     week.entries_with_raw_cost,
                     week.entries_with_calculated_cost,
@@ -1341,14 +1388,14 @@ pub fn render_weekly_report_table(
         .collect::<Vec<_>>();
 
     let total_row = vec![
-        "TOTAL".to_owned(),
-        report.totals.entries.to_string(),
-        report.totals.input_tokens.to_string(),
-        report.totals.output_tokens.to_string(),
-        report.totals.cache_creation_input_tokens.to_string(),
-        report.totals.cache_read_input_tokens.to_string(),
-        report.totals.total_tokens.to_string(),
-        json_number(report.totals.total_cost_usd),
+        "Total".to_owned(),
+        format_count_usize(report.totals.entries),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
         cost_provenance_triplet(
             report.totals.entries_with_raw_cost,
             report.totals.entries_with_calculated_cost,
@@ -1357,13 +1404,13 @@ pub fn render_weekly_report_table(
     ];
 
     render_human_report_table(
-        "Weekly Usage",
+        "Claude Code Token Usage Report - Weekly",
         &format!(
             "Weeks: {} | Entries: {} | Tokens: {} | Cost USD: {}",
-            report.totals.weeks,
-            report.totals.entries,
-            report.totals.total_tokens,
-            json_number(report.totals.total_cost_usd)
+            format_count_usize(report.totals.weeks),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
         ),
         &format!(
             "Cost provenance (raw/calculated/missing entries): {}",
@@ -1376,8 +1423,10 @@ pub fn render_weekly_report_table(
         &columns,
         &rows,
         &total_row,
-        discovery_warning_count,
-        parse_warning_count,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
     )
 }
 
@@ -1523,13 +1572,13 @@ pub fn render_monthly_report_table(
         .map(|month| {
             vec![
                 month.month.clone(),
-                month.entries.to_string(),
-                month.input_tokens.to_string(),
-                month.output_tokens.to_string(),
-                month.cache_creation_input_tokens.to_string(),
-                month.cache_read_input_tokens.to_string(),
-                month.total_tokens.to_string(),
-                json_number(month.total_cost_usd),
+                format_count_usize(month.entries),
+                format_count_u64(month.input_tokens),
+                format_count_u64(month.output_tokens),
+                format_count_u64(month.cache_creation_input_tokens),
+                format_count_u64(month.cache_read_input_tokens),
+                format_count_u64(month.total_tokens),
+                format_money_human(month.total_cost_usd),
                 cost_provenance_triplet(
                     month.entries_with_raw_cost,
                     month.entries_with_calculated_cost,
@@ -1540,14 +1589,14 @@ pub fn render_monthly_report_table(
         .collect::<Vec<_>>();
 
     let total_row = vec![
-        "TOTAL".to_owned(),
-        report.totals.entries.to_string(),
-        report.totals.input_tokens.to_string(),
-        report.totals.output_tokens.to_string(),
-        report.totals.cache_creation_input_tokens.to_string(),
-        report.totals.cache_read_input_tokens.to_string(),
-        report.totals.total_tokens.to_string(),
-        json_number(report.totals.total_cost_usd),
+        "Total".to_owned(),
+        format_count_usize(report.totals.entries),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
         cost_provenance_triplet(
             report.totals.entries_with_raw_cost,
             report.totals.entries_with_calculated_cost,
@@ -1556,13 +1605,13 @@ pub fn render_monthly_report_table(
     ];
 
     render_human_report_table(
-        "Monthly Usage",
+        "Claude Code Token Usage Report - Monthly",
         &format!(
             "Months: {} | Entries: {} | Tokens: {} | Cost USD: {}",
-            report.totals.months,
-            report.totals.entries,
-            report.totals.total_tokens,
-            json_number(report.totals.total_cost_usd)
+            format_count_usize(report.totals.months),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
         ),
         &format!(
             "Cost provenance (raw/calculated/missing entries): {}",
@@ -1575,8 +1624,10 @@ pub fn render_monthly_report_table(
         &columns,
         &rows,
         &total_row,
-        discovery_warning_count,
-        parse_warning_count,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
     )
 }
 
@@ -1728,13 +1779,13 @@ pub fn render_session_report_table(
             vec![
                 session.session_id.as_deref().unwrap_or("-").to_owned(),
                 session.project.as_deref().unwrap_or("-").to_owned(),
-                session.entries.to_string(),
-                session.input_tokens.to_string(),
-                session.output_tokens.to_string(),
-                session.cache_creation_input_tokens.to_string(),
-                session.cache_read_input_tokens.to_string(),
-                session.total_tokens.to_string(),
-                json_number(session.total_cost_usd),
+                format_count_usize(session.entries),
+                format_count_u64(session.input_tokens),
+                format_count_u64(session.output_tokens),
+                format_count_u64(session.cache_creation_input_tokens),
+                format_count_u64(session.cache_read_input_tokens),
+                format_count_u64(session.total_tokens),
+                format_money_human(session.total_cost_usd),
                 cost_provenance_triplet(
                     session.entries_with_raw_cost,
                     session.entries_with_calculated_cost,
@@ -1745,15 +1796,15 @@ pub fn render_session_report_table(
         .collect::<Vec<_>>();
 
     let total_row = vec![
-        "TOTAL".to_owned(),
+        "Total".to_owned(),
         "-".to_owned(),
-        report.totals.entries.to_string(),
-        report.totals.input_tokens.to_string(),
-        report.totals.output_tokens.to_string(),
-        report.totals.cache_creation_input_tokens.to_string(),
-        report.totals.cache_read_input_tokens.to_string(),
-        report.totals.total_tokens.to_string(),
-        json_number(report.totals.total_cost_usd),
+        format_count_usize(report.totals.entries),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
         cost_provenance_triplet(
             report.totals.entries_with_raw_cost,
             report.totals.entries_with_calculated_cost,
@@ -1762,13 +1813,13 @@ pub fn render_session_report_table(
     ];
 
     render_human_report_table(
-        "Session Usage",
+        "Claude Code Token Usage Report - Session",
         &format!(
             "Sessions: {} | Entries: {} | Tokens: {} | Cost USD: {}",
-            report.totals.sessions,
-            report.totals.entries,
-            report.totals.total_tokens,
-            json_number(report.totals.total_cost_usd)
+            format_count_usize(report.totals.sessions),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
         ),
         &format!(
             "Cost provenance (raw/calculated/missing entries): {}",
@@ -1781,8 +1832,10 @@ pub fn render_session_report_table(
         &columns,
         &rows,
         &total_row,
-        discovery_warning_count,
-        parse_warning_count,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
     )
 }
 
@@ -1944,13 +1997,13 @@ pub fn render_blocks_report_table(
                 format!("{}..{}", block.block_start, block.block_end),
                 block.first_event_at.clone(),
                 block.last_event_at.clone(),
-                block.entries.to_string(),
-                block.input_tokens.to_string(),
-                block.output_tokens.to_string(),
-                block.cache_creation_input_tokens.to_string(),
-                block.cache_read_input_tokens.to_string(),
-                block.total_tokens.to_string(),
-                json_number(block.total_cost_usd),
+                format_count_usize(block.entries),
+                format_count_u64(block.input_tokens),
+                format_count_u64(block.output_tokens),
+                format_count_u64(block.cache_creation_input_tokens),
+                format_count_u64(block.cache_read_input_tokens),
+                format_count_u64(block.total_tokens),
+                format_money_human(block.total_cost_usd),
                 cost_provenance_triplet(
                     block.entries_with_raw_cost,
                     block.entries_with_calculated_cost,
@@ -1961,16 +2014,16 @@ pub fn render_blocks_report_table(
         .collect::<Vec<_>>();
 
     let total_row = vec![
-        "TOTAL".to_owned(),
+        "Total".to_owned(),
         "-".to_owned(),
         "-".to_owned(),
-        report.totals.entries.to_string(),
-        report.totals.input_tokens.to_string(),
-        report.totals.output_tokens.to_string(),
-        report.totals.cache_creation_input_tokens.to_string(),
-        report.totals.cache_read_input_tokens.to_string(),
-        report.totals.total_tokens.to_string(),
-        json_number(report.totals.total_cost_usd),
+        format_count_usize(report.totals.entries),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
         cost_provenance_triplet(
             report.totals.entries_with_raw_cost,
             report.totals.entries_with_calculated_cost,
@@ -1979,13 +2032,13 @@ pub fn render_blocks_report_table(
     ];
 
     render_human_report_table(
-        "Block Usage",
+        "Claude Code Token Usage Report - Blocks",
         &format!(
             "Blocks: {} | Entries: {} | Tokens: {} | Cost USD: {}",
-            report.totals.blocks,
-            report.totals.entries,
-            report.totals.total_tokens,
-            json_number(report.totals.total_cost_usd)
+            format_count_usize(report.totals.blocks),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
         ),
         &format!(
             "Cost provenance (raw/calculated/missing entries): {}",
@@ -1998,8 +2051,10 @@ pub fn render_blocks_report_table(
         &columns,
         &rows,
         &total_row,
-        discovery_warning_count,
-        parse_warning_count,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
     )
 }
 

@@ -19,15 +19,6 @@ const TIMESTAMP_PATHS: &[&[&str]] = &[
     &["message", "createdAt"],
 ];
 
-const EVENT_TYPE_PATHS: &[&[&str]] = &[
-    &["type"],
-    &["event"],
-    &["event_type"],
-    &["eventType"],
-    &["message", "type"],
-    &["message", "event"],
-];
-
 const SESSION_ID_PATHS: &[&[&str]] = &[
     &["session_id"],
     &["sessionId"],
@@ -68,6 +59,10 @@ const SPEED_PATHS: &[&[&str]] = &[
     &["message", "usage", "speed"],
     &["response", "usage", "speed"],
 ];
+
+const MESSAGE_ID_PATHS: &[&[&str]] = &[&["message", "id"], &["message_id"], &["messageId"]];
+
+const REQUEST_ID_PATHS: &[&[&str]] = &[&["requestId"], &["request_id"]];
 
 const INPUT_TOKEN_PATHS: &[&[&str]] = &[
     &["input_tokens"],
@@ -133,6 +128,7 @@ const TOTAL_TOKEN_PATHS: &[&[&str]] = &[
 ];
 
 const COST_PATHS: &[&[&str]] = &[
+    &["costUSD"],
     &["cost_usd"],
     &["costUsd"],
     &["total_cost_usd"],
@@ -143,15 +139,6 @@ const COST_PATHS: &[&[&str]] = &[
     &["response", "usage", "cost_usd"],
 ];
 
-const TIMESTAMP_KEYS: &[&str] = &[
-    "timestamp",
-    "created_at",
-    "createdat",
-    "time",
-    "event_time",
-    "eventtime",
-];
-const EVENT_TYPE_KEYS: &[&str] = &["type", "event", "event_type", "eventtype"];
 const SESSION_ID_KEYS: &[&str] = &["session_id", "sessionid"];
 const PROJECT_KEYS: &[&str] = &[
     "project",
@@ -188,6 +175,7 @@ const CACHE_READ_TOKEN_KEYS: &[&str] = &[
 ];
 const TOTAL_TOKEN_KEYS: &[&str] = &["total_tokens", "totaltokens"];
 const COST_KEYS: &[&str] = &[
+    "costusd",
     "cost_usd",
     "costusd",
     "total_cost_usd",
@@ -215,10 +203,6 @@ impl JsonValue {
 
     fn is_object(&self) -> bool {
         self.as_object().is_some()
-    }
-
-    fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
     }
 }
 
@@ -553,9 +537,10 @@ impl ParseResult {
 pub fn parse_jsonl_files(files: &[PathBuf]) -> ParseResult {
     let unique_files = dedupe_paths(files.iter().cloned());
     let mut output = ParseResult::default();
+    let mut processed_hashes = BTreeSet::new();
 
     for file in unique_files {
-        output.extend(parse_jsonl_file(&file));
+        output.extend(parse_jsonl_file_with_dedup(&file, &mut processed_hashes));
     }
 
     output
@@ -563,6 +548,14 @@ pub fn parse_jsonl_files(files: &[PathBuf]) -> ParseResult {
 
 #[must_use]
 pub fn parse_jsonl_file(path: &Path) -> ParseResult {
+    let mut processed_hashes = BTreeSet::new();
+    parse_jsonl_file_with_dedup(path, &mut processed_hashes)
+}
+
+fn parse_jsonl_file_with_dedup(
+    path: &Path,
+    processed_hashes: &mut BTreeSet<String>,
+) -> ParseResult {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) => {
@@ -577,10 +570,14 @@ pub fn parse_jsonl_file(path: &Path) -> ParseResult {
         }
     };
 
-    parse_jsonl_reader(BufReader::new(file), path)
+    parse_jsonl_reader(BufReader::new(file), path, processed_hashes)
 }
 
-fn parse_jsonl_reader<R: BufRead>(reader: R, path: &Path) -> ParseResult {
+fn parse_jsonl_reader<R: BufRead>(
+    reader: R,
+    path: &Path,
+    processed_hashes: &mut BTreeSet<String>,
+) -> ParseResult {
     let mut output = ParseResult::default();
 
     for (index, line_result) in reader.lines().enumerate() {
@@ -623,8 +620,18 @@ fn parse_jsonl_reader<R: BufRead>(reader: R, path: &Path) -> ParseResult {
             continue;
         }
 
-        match normalize_event(&raw_value, path, line_number) {
-            Ok(event) => output.events.push(event),
+        match normalize_usage_event(&raw_value, path, line_number) {
+            Ok(Some(event)) => {
+                let Some(unique_hash) = create_unique_hash(&raw_value) else {
+                    output.events.push(event);
+                    continue;
+                };
+
+                if processed_hashes.insert(unique_hash) {
+                    output.events.push(event);
+                }
+            }
+            Ok(None) => {}
             Err(message) => output.warnings.push(ParseWarning {
                 file: path.to_path_buf(),
                 line_number: Some(line_number),
@@ -636,35 +643,26 @@ fn parse_jsonl_reader<R: BufRead>(reader: R, path: &Path) -> ParseResult {
     output
 }
 
-fn normalize_event(
+fn normalize_usage_event(
     value: &JsonValue,
     file: &Path,
     line_number: usize,
-) -> Result<UsageEvent, String> {
+) -> Result<Option<UsageEvent>, String> {
+    let event_kind = EventKind::from_raw(root_type(value).as_deref());
+    let has_message_usage = value_at_path(value, &["message", "usage"]).is_some();
+    let usage = extract_usage(value);
+    if usage.is_none() {
+        return Ok(None);
+    }
+    if !has_message_usage && event_kind != EventKind::Assistant {
+        return Ok(None);
+    }
+
     let Some(occurred_at_unix_ms) = extract_timestamp_ms(value) else {
         return Err("missing parseable timestamp".to_owned());
     };
 
-    let event_kind =
-        EventKind::from_raw(extract_string(value, EVENT_TYPE_PATHS, EVENT_TYPE_KEYS).as_deref());
-
-    let input_tokens = extract_u64(value, INPUT_TOKEN_PATHS, INPUT_TOKEN_KEYS).unwrap_or(0);
-    let output_tokens = extract_u64(value, OUTPUT_TOKEN_PATHS, OUTPUT_TOKEN_KEYS).unwrap_or(0);
-    let cache_creation_input_tokens =
-        extract_u64(value, CACHE_CREATION_TOKEN_PATHS, CACHE_CREATION_TOKEN_KEYS).unwrap_or(0);
-    let cache_read_input_tokens =
-        extract_u64(value, CACHE_READ_TOKEN_PATHS, CACHE_READ_TOKEN_KEYS).unwrap_or(0);
-    let total_tokens = extract_u64(value, TOTAL_TOKEN_PATHS, TOTAL_TOKEN_KEYS);
-
-    let usage = TokenUsage::new(
-        input_tokens,
-        output_tokens,
-        cache_creation_input_tokens,
-        cache_read_input_tokens,
-        total_tokens,
-    );
-
-    Ok(UsageEvent {
+    Ok(Some(UsageEvent {
         origin: EventOrigin {
             file: file.to_path_buf(),
             line_number,
@@ -672,12 +670,67 @@ fn normalize_event(
         occurred_at_unix_ms,
         event_kind,
         session_id: extract_string(value, SESSION_ID_PATHS, SESSION_ID_KEYS),
-        project: extract_string(value, PROJECT_PATHS, PROJECT_KEYS),
+        project: extract_project(value, file),
         model: extract_string(value, MODEL_PATHS, MODEL_KEYS),
         speed: UsageSpeed::from_raw(extract_string(value, SPEED_PATHS, SPEED_KEYS).as_deref()),
-        usage,
+        usage: usage.expect("usage presence checked above"),
         raw_cost_usd: extract_f64(value, COST_PATHS, COST_KEYS),
-    })
+    }))
+}
+
+fn extract_usage(value: &JsonValue) -> Option<TokenUsage> {
+    let input_tokens = extract_u64(value, INPUT_TOKEN_PATHS, INPUT_TOKEN_KEYS);
+    let output_tokens = extract_u64(value, OUTPUT_TOKEN_PATHS, OUTPUT_TOKEN_KEYS);
+    let cache_creation_input_tokens =
+        extract_u64(value, CACHE_CREATION_TOKEN_PATHS, CACHE_CREATION_TOKEN_KEYS);
+    let cache_read_input_tokens = extract_u64(value, CACHE_READ_TOKEN_PATHS, CACHE_READ_TOKEN_KEYS);
+    let total_tokens = extract_u64(value, TOTAL_TOKEN_PATHS, TOTAL_TOKEN_KEYS);
+
+    let has_usage = input_tokens.is_some()
+        || output_tokens.is_some()
+        || cache_creation_input_tokens.is_some()
+        || cache_read_input_tokens.is_some()
+        || total_tokens.is_some();
+    if !has_usage {
+        return None;
+    }
+
+    Some(TokenUsage::new(
+        input_tokens.unwrap_or(0),
+        output_tokens.unwrap_or(0),
+        cache_creation_input_tokens.unwrap_or(0),
+        cache_read_input_tokens.unwrap_or(0),
+        total_tokens,
+    ))
+}
+
+fn root_type(value: &JsonValue) -> Option<String> {
+    value_at_path(value, &["type"]).and_then(value_to_non_empty_string)
+}
+
+fn create_unique_hash(value: &JsonValue) -> Option<String> {
+    let message_id = extract_string(value, MESSAGE_ID_PATHS, &[])?;
+    let request_id = extract_string(value, REQUEST_ID_PATHS, &[])?;
+    Some(format!("{message_id}:{request_id}"))
+}
+
+fn extract_project(value: &JsonValue, file: &Path) -> Option<String> {
+    extract_project_from_path(file).or_else(|| extract_string(value, PROJECT_PATHS, PROJECT_KEYS))
+}
+
+fn extract_project_from_path(path: &Path) -> Option<String> {
+    let mut segments = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .peekable();
+
+    while let Some(segment) = segments.next() {
+        if segment == "projects" {
+            return segments.next().filter(|value| !value.trim().is_empty());
+        }
+    }
+
+    None
 }
 
 fn extract_timestamp_ms(value: &JsonValue) -> Option<i64> {
@@ -689,7 +742,7 @@ fn extract_timestamp_ms(value: &JsonValue) -> Option<i64> {
         }
     }
 
-    find_first_value_by_key(value, TIMESTAMP_KEYS).and_then(parse_timestamp_value)
+    None
 }
 
 fn parse_timestamp_value(value: &JsonValue) -> Option<i64> {
@@ -909,7 +962,8 @@ fn extract_string(value: &JsonValue, paths: &[&[&str]], keys: &[&str]) -> Option
         }
     }
 
-    find_first_value_by_key(value, keys).and_then(value_to_non_empty_string)
+    let _ = keys;
+    None
 }
 
 fn extract_u64(value: &JsonValue, paths: &[&[&str]], keys: &[&str]) -> Option<u64> {
@@ -921,7 +975,8 @@ fn extract_u64(value: &JsonValue, paths: &[&[&str]], keys: &[&str]) -> Option<u6
         }
     }
 
-    find_first_value_by_key(value, keys).and_then(value_to_u64)
+    let _ = keys;
+    None
 }
 
 fn extract_f64(value: &JsonValue, paths: &[&[&str]], keys: &[&str]) -> Option<f64> {
@@ -933,7 +988,8 @@ fn extract_f64(value: &JsonValue, paths: &[&[&str]], keys: &[&str]) -> Option<f6
         }
     }
 
-    find_first_value_by_key(value, keys).and_then(value_to_f64)
+    let _ = keys;
+    None
 }
 
 fn value_to_non_empty_string(value: &JsonValue) -> Option<String> {
@@ -983,40 +1039,6 @@ fn value_at_path<'a>(value: &'a JsonValue, path: &[&str]) -> Option<&'a JsonValu
     Some(current)
 }
 
-fn find_first_value_by_key<'a>(value: &'a JsonValue, keys: &[&str]) -> Option<&'a JsonValue> {
-    match value {
-        JsonValue::Object(object) => {
-            for (key, child) in object {
-                if key_matches(key, keys) && !child.is_null() {
-                    return Some(child);
-                }
-            }
-
-            for child in object.values() {
-                if let Some(found) = find_first_value_by_key(child, keys) {
-                    return Some(found);
-                }
-            }
-
-            None
-        }
-        JsonValue::Array(items) => {
-            for child in items {
-                if let Some(found) = find_first_value_by_key(child, keys) {
-                    return Some(found);
-                }
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-fn key_matches(key: &str, keys: &[&str]) -> bool {
-    keys.iter()
-        .any(|candidate| key.eq_ignore_ascii_case(candidate))
-}
-
 fn dedupe_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut deduped = BTreeSet::new();
     for path in paths {
@@ -1040,11 +1062,11 @@ mod tests {
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
-    fn normalizes_token_usage_and_common_fields_from_mixed_shapes() {
+    fn parses_only_billable_assistant_usage_records() {
         let test_dir = TestDir::new();
         let file = test_dir.path().join("mixed.jsonl");
         let content = concat!(
-            "{\"timestamp\":1700000000,\"type\":\"assistant_message\",\"session_id\":\"s1\",\"project\":\"alpha\",\"model\":\"claude-a\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":3}}\n",
+            "{\"timestamp\":1700000000,\"type\":\"assistant_message\",\"session_id\":\"s1\",\"project\":\"alpha\",\"costUSD\":0.5,\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":3},\"model\":\"claude-a\"},\"requestId\":\"r1\"}\n",
             "{\"createdAt\":\"1970-01-01T00:00:02Z\",\"event\":\"tool_result\",\"session\":{\"id\":\"s2\"},\"project_name\":\"beta\",\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":11,\"total_tokens\":99}}\n",
             "{\"timestamp\":1700000000123456,\"type\":\"custom_event\",\"message\":{\"usage\":{\"inputTokens\":\"4\",\"outputTokens\":\"6\",\"speed\":\"fast\"},\"model\":\"claude-b\"},\"total_cost_usd\":\"0.123\"}\n"
         );
@@ -1054,7 +1076,7 @@ mod tests {
         let parsed = parse_jsonl_file(&file);
 
         assert!(parsed.warnings.is_empty());
-        assert_eq!(parsed.events.len(), 3);
+        assert_eq!(parsed.events.len(), 2);
 
         assert_eq!(parsed.events[0].occurred_at_unix_ms, 1_700_000_000_000);
         assert_eq!(parsed.events[0].event_kind, EventKind::Assistant);
@@ -1066,29 +1088,22 @@ mod tests {
         assert_eq!(parsed.events[0].usage.cache_creation_input_tokens, 2);
         assert_eq!(parsed.events[0].usage.cache_read_input_tokens, 3);
         assert_eq!(parsed.events[0].usage.total_tokens, 20);
+        assert_eq!(parsed.events[0].raw_cost_usd, Some(0.5));
 
-        assert_eq!(parsed.events[1].occurred_at_unix_ms, 2_000);
-        assert_eq!(parsed.events[1].event_kind, EventKind::ToolResult);
-        assert_eq!(parsed.events[1].session_id.as_deref(), Some("s2"));
-        assert_eq!(parsed.events[1].project.as_deref(), Some("beta"));
-        assert_eq!(parsed.events[1].usage.input_tokens, 7);
-        assert_eq!(parsed.events[1].usage.output_tokens, 11);
-        assert_eq!(parsed.events[1].usage.total_tokens, 99);
-
-        assert_eq!(parsed.events[2].occurred_at_unix_ms, 1_700_000_000_123);
+        assert_eq!(parsed.events[1].occurred_at_unix_ms, 1_700_000_000_123);
         assert_eq!(
-            parsed.events[2].event_kind,
+            parsed.events[1].event_kind,
             EventKind::Unknown("custom_event".to_owned())
         );
-        assert_eq!(parsed.events[2].model.as_deref(), Some("claude-b"));
+        assert_eq!(parsed.events[1].model.as_deref(), Some("claude-b"));
         assert_eq!(
-            parsed.events[2].speed,
+            parsed.events[1].speed,
             Some(crate::domain::UsageSpeed::Fast)
         );
-        assert_eq!(parsed.events[2].usage.input_tokens, 4);
-        assert_eq!(parsed.events[2].usage.output_tokens, 6);
-        assert_eq!(parsed.events[2].usage.total_tokens, 10);
-        assert_eq!(parsed.events[2].raw_cost_usd, Some(0.123));
+        assert_eq!(parsed.events[1].usage.input_tokens, 4);
+        assert_eq!(parsed.events[1].usage.output_tokens, 6);
+        assert_eq!(parsed.events[1].usage.total_tokens, 10);
+        assert_eq!(parsed.events[1].raw_cost_usd, Some(0.123));
     }
 
     #[test]
@@ -1132,7 +1147,10 @@ mod tests {
 
         write(
             &a,
-            "{\"timestamp\":1700000000,\"type\":\"assistant\",\"usage\":{\"input_tokens\":1}}\n",
+            concat!(
+                "{\"timestamp\":\"2026-03-15T12:00:00Z\",\"type\":\"assistant\",\"message\":{\"id\":\"msg-1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2},\"model\":\"claude-sonnet-4-6\"},\"requestId\":\"req-1\"}\n",
+                "{\"timestamp\":\"2026-03-15T12:01:00Z\",\"type\":\"assistant\",\"message\":{\"id\":\"msg-1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2},\"model\":\"claude-sonnet-4-6\"},\"requestId\":\"req-1\"}\n"
+            ),
         )
         .expect("failed to write file a");
         write(
@@ -1143,14 +1161,32 @@ mod tests {
 
         let parsed = parse_jsonl_files(&[missing.clone(), b.clone(), a.clone(), a.clone()]);
 
-        assert_eq!(parsed.events.len(), 2);
+        assert_eq!(parsed.events.len(), 1);
         assert_eq!(parsed.warnings.len(), 1);
         assert_eq!(parsed.warnings[0].file, missing);
         assert!(parsed.warnings[0].line_number.is_none());
         assert!(parsed.warnings[0].message.contains("failed to open file"));
 
         assert_eq!(parsed.events[0].origin.file, a);
-        assert_eq!(parsed.events[1].origin.file, b);
+    }
+
+    #[test]
+    fn derives_project_from_projects_directory_segment() {
+        let test_dir = TestDir::new();
+        let root = test_dir.path().join("claude-config/projects/team-alpha");
+        create_dir_all(&root).expect("failed to create projects dir");
+        let file = root.join("session.jsonl");
+
+        write(
+            &file,
+            "{\"timestamp\":\"2026-03-15T12:00:00Z\",\"type\":\"assistant\",\"message\":{\"id\":\"msg-1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2},\"model\":\"claude-sonnet-4-6\"},\"requestId\":\"req-1\"}\n",
+        )
+        .expect("failed to write session file");
+
+        let parsed = parse_jsonl_file(&file);
+
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].project.as_deref(), Some("team-alpha"));
     }
 
     struct TestDir {
