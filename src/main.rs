@@ -1,5 +1,5 @@
-use clap::{Args, Parser, Subcommand};
-use cusage_rs::config::DataRootOptions;
+use clap::{ArgAction, Args, Parser, Subcommand};
+use cusage_rs::config::{DataRootOptions, resolve_home_dir};
 use cusage_rs::discovery::discover_session_files;
 use cusage_rs::domain::UsageEvent;
 use cusage_rs::parser::parse_jsonl_files;
@@ -13,8 +13,12 @@ use cusage_rs::report::{
     render_statusline_report_json, render_statusline_report_line, render_weekly_report_json,
     render_weekly_report_table,
 };
+use cusage_rs::runtime_config::{
+    CommandConfigLayer, load_auto_config_layer, load_custom_config_layer,
+};
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const MILLIS_PER_MINUTE: i64 = 60_000;
@@ -62,12 +66,24 @@ struct ReportArgs {
     timezone: Option<String>,
     #[arg(long, short = 'l', value_name = "LOCALE")]
     locale: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+    #[arg(long, short = 'O', action = ArgAction::SetTrue, overrides_with = "no_offline")]
+    offline: bool,
+    #[arg(long = "no-offline", action = ArgAction::SetTrue, overrides_with = "offline")]
+    no_offline: bool,
 }
 
 #[derive(Debug, Args, Clone, PartialEq, Eq, Default)]
 struct StatuslineArgs {
     #[arg(long, short = 'j')]
     json: bool,
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+    #[arg(long, short = 'O', action = ArgAction::SetTrue, overrides_with = "no_offline")]
+    offline: bool,
+    #[arg(long = "no-offline", action = ArgAction::SetTrue, overrides_with = "offline")]
+    no_offline: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,6 +106,31 @@ struct PreparedEvents {
     discovery_warning_count: usize,
     parse_warning_count: usize,
     table_options: TableRenderOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedReportArgs {
+    since: Option<String>,
+    until: Option<String>,
+    json: bool,
+    breakdown: bool,
+    compact: bool,
+    instances: bool,
+    project: Option<String>,
+    timezone: Option<String>,
+    locale: Option<String>,
+    offline: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedStatuslineArgs {
+    json: bool,
+    offline: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct EnvironmentLayer {
+    offline: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,7 +164,7 @@ struct SharedFilters {
 }
 
 impl SharedFilters {
-    fn from_args(args: &ReportArgs) -> Result<Self, String> {
+    fn from_resolved(args: &ResolvedReportArgs) -> Result<Self, String> {
         let since = args.since.as_deref().map(parse_cli_day).transpose()?;
         let until = args.until.as_deref().map(parse_cli_day).transpose()?;
         if let (Some(since), Some(until)) = (since, until)
@@ -171,12 +212,12 @@ fn describe_command(command: &Command) -> Result<String, String> {
         Command::Monthly(args) => render_monthly_command(args),
         Command::Session(args) => render_session_command(args),
         Command::Blocks(args) => render_blocks_command(args),
-        Command::Statusline(args) => Ok(render_statusline_command(args)),
+        Command::Statusline(args) => render_statusline_command(args),
     }
 }
 
-fn prepare_events(args: &ReportArgs) -> Result<PreparedEvents, String> {
-    let filters = SharedFilters::from_args(args)?;
+fn prepare_events(args: &ResolvedReportArgs) -> Result<PreparedEvents, String> {
+    let filters = SharedFilters::from_resolved(args)?;
     let data_roots = DataRootOptions::from_environment().resolve_project_roots();
     let discovered = discover_session_files(&data_roots);
     let parsed = parse_jsonl_files(&discovered.files);
@@ -201,7 +242,8 @@ fn prepare_events(args: &ReportArgs) -> Result<PreparedEvents, String> {
 }
 
 fn render_daily_command(args: &ReportArgs) -> Result<String, String> {
-    let prepared = prepare_events(args)?;
+    let args = resolve_report_args("daily", args)?;
+    let prepared = prepare_events(&args)?;
     let report = build_daily_report(&prepared.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
@@ -216,7 +258,8 @@ fn render_daily_command(args: &ReportArgs) -> Result<String, String> {
 }
 
 fn render_weekly_command(args: &ReportArgs) -> Result<String, String> {
-    let prepared = prepare_events(args)?;
+    let args = resolve_report_args("weekly", args)?;
+    let prepared = prepare_events(&args)?;
     let report = build_weekly_report(&prepared.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
@@ -231,7 +274,8 @@ fn render_weekly_command(args: &ReportArgs) -> Result<String, String> {
 }
 
 fn render_monthly_command(args: &ReportArgs) -> Result<String, String> {
-    let prepared = prepare_events(args)?;
+    let args = resolve_report_args("monthly", args)?;
+    let prepared = prepare_events(&args)?;
     let report = build_monthly_report(&prepared.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
@@ -246,7 +290,8 @@ fn render_monthly_command(args: &ReportArgs) -> Result<String, String> {
 }
 
 fn render_session_command(args: &ReportArgs) -> Result<String, String> {
-    let prepared = prepare_events(args)?;
+    let args = resolve_report_args("session", args)?;
+    let prepared = prepare_events(&args)?;
     let report = build_session_report(&prepared.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
@@ -261,7 +306,8 @@ fn render_session_command(args: &ReportArgs) -> Result<String, String> {
 }
 
 fn render_blocks_command(args: &ReportArgs) -> Result<String, String> {
-    let prepared = prepare_events(args)?;
+    let args = resolve_report_args("blocks", args)?;
+    let prepared = prepare_events(&args)?;
     let report = build_blocks_report(&prepared.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
@@ -275,16 +321,161 @@ fn render_blocks_command(args: &ReportArgs) -> Result<String, String> {
     }
 }
 
-fn render_statusline_command(args: &StatuslineArgs) -> String {
+fn render_statusline_command(args: &StatuslineArgs) -> Result<String, String> {
+    let args = resolve_statusline_args(args)?;
     let data_roots = DataRootOptions::from_environment().resolve_project_roots();
     let discovered = discover_session_files(&data_roots);
     let parsed = parse_jsonl_files(&discovered.files);
     let report = build_statusline_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
 
     if args.json {
-        render_statusline_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+        Ok(render_statusline_report_json(
+            &report,
+            discovered.warnings.len(),
+            parsed.warnings.len(),
+        ))
     } else {
-        render_statusline_report_line(&report)
+        Ok(render_statusline_report_line(&report))
+    }
+}
+
+fn resolve_report_args(command: &str, args: &ReportArgs) -> Result<ResolvedReportArgs, String> {
+    let cwd = std::env::current_dir()
+        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
+    let home_dir = resolve_home_dir();
+    let environment = read_environment_layer();
+    resolve_report_args_with_context(command, args, &cwd, home_dir.as_deref(), environment)
+}
+
+fn resolve_statusline_args(args: &StatuslineArgs) -> Result<ResolvedStatuslineArgs, String> {
+    let cwd = std::env::current_dir()
+        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
+    let home_dir = resolve_home_dir();
+    let environment = read_environment_layer();
+    resolve_statusline_args_with_context(args, &cwd, home_dir.as_deref(), environment)
+}
+
+fn resolve_report_args_with_context(
+    command: &str,
+    args: &ReportArgs,
+    cwd: &Path,
+    home_dir: Option<&Path>,
+    environment: EnvironmentLayer,
+) -> Result<ResolvedReportArgs, String> {
+    let mut layer = load_auto_config_layer(command, cwd, home_dir)?;
+    apply_environment_layer(&mut layer, environment);
+    if let Some(config_path) = resolve_custom_config_path(args.config.as_deref(), cwd, home_dir)? {
+        let custom_layer = load_custom_config_layer(command, &config_path)?;
+        layer.merge_from(&custom_layer);
+    }
+
+    let offline = cli_offline_override(args.offline, args.no_offline)
+        .or(layer.offline)
+        .unwrap_or(false);
+
+    Ok(ResolvedReportArgs {
+        since: args.since.clone().or(layer.since),
+        until: args.until.clone().or(layer.until),
+        json: args.json || layer.json.unwrap_or(false),
+        breakdown: args.breakdown || layer.breakdown.unwrap_or(false),
+        compact: args.compact || layer.compact.unwrap_or(false),
+        instances: args.instances || layer.instances.unwrap_or(false),
+        project: args.project.clone().or(layer.project),
+        timezone: args.timezone.clone().or(layer.timezone),
+        locale: args.locale.clone().or(layer.locale),
+        offline,
+    })
+}
+
+fn resolve_statusline_args_with_context(
+    args: &StatuslineArgs,
+    cwd: &Path,
+    home_dir: Option<&Path>,
+    environment: EnvironmentLayer,
+) -> Result<ResolvedStatuslineArgs, String> {
+    let mut layer = load_auto_config_layer("statusline", cwd, home_dir)?;
+    apply_environment_layer(&mut layer, environment);
+    if let Some(config_path) = resolve_custom_config_path(args.config.as_deref(), cwd, home_dir)? {
+        let custom_layer = load_custom_config_layer("statusline", &config_path)?;
+        layer.merge_from(&custom_layer);
+    }
+
+    let offline = cli_offline_override(args.offline, args.no_offline)
+        .or(layer.offline)
+        .unwrap_or(false);
+
+    Ok(ResolvedStatuslineArgs {
+        json: args.json || layer.json.unwrap_or(false),
+        offline,
+    })
+}
+
+fn resolve_custom_config_path(
+    path: Option<&Path>,
+    cwd: &Path,
+    home_dir: Option<&Path>,
+) -> Result<Option<PathBuf>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    if path.as_os_str().is_empty() {
+        return Err("--config path cannot be empty".to_owned());
+    }
+
+    let expanded = expand_home_path(path, home_dir);
+    if expanded.as_os_str().is_empty() {
+        return Err("--config path cannot be empty".to_owned());
+    }
+    if expanded.is_absolute() {
+        return Ok(Some(expanded));
+    }
+    Ok(Some(cwd.join(expanded)))
+}
+
+fn expand_home_path(path: &Path, home_dir: Option<&Path>) -> PathBuf {
+    let rendered = path.to_string_lossy();
+    if rendered == "~" {
+        return home_dir
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+    if let Some(stripped) = rendered.strip_prefix("~/")
+        && let Some(home_dir) = home_dir
+    {
+        return home_dir.join(stripped);
+    }
+    path.to_path_buf()
+}
+
+fn cli_offline_override(offline: bool, no_offline: bool) -> Option<bool> {
+    if offline {
+        Some(true)
+    } else if no_offline {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn apply_environment_layer(layer: &mut CommandConfigLayer, environment: EnvironmentLayer) {
+    if environment.offline.is_some() {
+        layer.offline = environment.offline;
+    }
+}
+
+fn read_environment_layer() -> EnvironmentLayer {
+    EnvironmentLayer {
+        offline: parse_env_bool(std::env::var_os("CCUSAGE_OFFLINE").as_deref()),
+    }
+}
+
+fn parse_env_bool(raw: Option<&std::ffi::OsStr>) -> Option<bool> {
+    let raw = raw?.to_str()?.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -1143,7 +1334,13 @@ mod tests {
     use super::*;
     use cusage_rs::domain::{EventKind, EventOrigin, TokenUsage, UsageSpeed};
     use cusage_rs::report::{DailyReportDay, DailyReportTotals};
-    use std::path::PathBuf;
+    use std::ffi::OsStr;
+    use std::fs::{create_dir_all, remove_dir_all, write};
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn defaults_to_daily_command() {
@@ -1198,7 +1395,7 @@ mod tests {
         let command = cli.command.expect("expected parsed subcommand");
         assert!(matches!(
             command,
-            Command::Statusline(StatuslineArgs { json: true })
+            Command::Statusline(StatuslineArgs { json: true, .. })
         ));
     }
 
@@ -1235,6 +1432,25 @@ mod tests {
         assert_eq!(args.locale.as_deref(), Some("de-DE"));
         assert_eq!(args.since.as_deref(), Some("20260310"));
         assert_eq!(args.until.as_deref(), Some("20260312"));
+    }
+
+    #[test]
+    fn parses_offline_flag_and_no_offline_override() {
+        let cli = Cli::parse_from(["cusage-rs", "daily", "-O"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        let Command::Daily(args) = command else {
+            panic!("expected daily command");
+        };
+        assert!(args.offline);
+        assert!(!args.no_offline);
+
+        let cli = Cli::parse_from(["cusage-rs", "daily", "--no-offline"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        let Command::Daily(args) = command else {
+            panic!("expected daily command");
+        };
+        assert!(!args.offline);
+        assert!(args.no_offline);
     }
 
     #[test]
@@ -1285,25 +1501,37 @@ mod tests {
 
     #[test]
     fn rejects_inverted_since_until_range() {
-        let args = ReportArgs {
+        let args = ResolvedReportArgs {
             since: Some("20260312".to_owned()),
             until: Some("20260310".to_owned()),
-            ..ReportArgs::default()
+            json: false,
+            breakdown: false,
+            compact: false,
+            instances: false,
+            project: None,
+            timezone: None,
+            locale: None,
+            offline: false,
         };
-        let error = SharedFilters::from_args(&args).expect_err("expected invalid range");
+        let error = SharedFilters::from_resolved(&args).expect_err("expected invalid range");
         assert!(error.contains("--since"));
     }
 
     #[test]
     fn applies_since_until_and_project_filters_inclusive() {
-        let args = ReportArgs {
+        let args = ResolvedReportArgs {
             since: Some("20260310".to_owned()),
             until: Some("20260310".to_owned()),
+            json: false,
+            breakdown: false,
+            compact: false,
+            instances: false,
             project: Some("alpha".to_owned()),
             timezone: Some("+02:00".to_owned()),
-            ..ReportArgs::default()
+            locale: None,
+            offline: false,
         };
-        let filters = SharedFilters::from_args(&args).expect("expected valid shared filters");
+        let filters = SharedFilters::from_resolved(&args).expect("expected valid shared filters");
         let day = parse_cli_day("20260310").expect("expected day parse");
         let start = day_start_unix_ms(day, filters.timezone_offset_minutes);
         let end = day_end_unix_ms(day, filters.timezone_offset_minutes);
@@ -1384,6 +1612,96 @@ mod tests {
         assert!(rendered.contains("INSTANCES distinct=2"));
     }
 
+    #[test]
+    fn env_offline_overrides_local_config_and_cli_can_disable_it() {
+        let test_dir = TestDir::new();
+        let home_dir = test_dir.path().join("home");
+        let cwd = test_dir.path().join("workspace");
+        create_dir_all(cwd.join(".ccusage")).expect("failed to create local config dir");
+        create_dir_all(&home_dir).expect("failed to create home dir");
+        write(
+            cwd.join(".ccusage/ccusage.json"),
+            r#"{"commands":{"daily":{"offline":false}}}"#,
+        )
+        .expect("failed to write local config");
+
+        let args = ReportArgs::default();
+        let resolved = resolve_report_args_with_context(
+            "daily",
+            &args,
+            &cwd,
+            Some(&home_dir),
+            EnvironmentLayer {
+                offline: Some(true),
+            },
+        )
+        .expect("expected resolved args");
+        assert!(resolved.offline);
+
+        let args = ReportArgs {
+            no_offline: true,
+            ..ReportArgs::default()
+        };
+        let resolved = resolve_report_args_with_context(
+            "daily",
+            &args,
+            &cwd,
+            Some(&home_dir),
+            EnvironmentLayer {
+                offline: Some(true),
+            },
+        )
+        .expect("expected resolved args");
+        assert!(!resolved.offline);
+    }
+
+    #[test]
+    fn custom_config_overrides_environment_for_offline() {
+        let test_dir = TestDir::new();
+        let home_dir = test_dir.path().join("home");
+        let cwd = test_dir.path().join("workspace");
+        let custom_path = test_dir.path().join("custom-config.json");
+        create_dir_all(cwd.join(".ccusage")).expect("failed to create local config dir");
+        create_dir_all(&home_dir).expect("failed to create home dir");
+        write(
+            cwd.join(".ccusage/ccusage.json"),
+            r#"{"commands":{"daily":{"offline":true}}}"#,
+        )
+        .expect("failed to write local config");
+        write(
+            &custom_path,
+            r#"{"commands":{"daily":{"offline":false,"json":true}}}"#,
+        )
+        .expect("failed to write custom config");
+
+        let args = ReportArgs {
+            config: Some(custom_path),
+            ..ReportArgs::default()
+        };
+        let resolved = resolve_report_args_with_context(
+            "daily",
+            &args,
+            &cwd,
+            Some(&home_dir),
+            EnvironmentLayer {
+                offline: Some(true),
+            },
+        )
+        .expect("expected resolved args");
+        assert!(!resolved.offline);
+        assert!(resolved.json);
+    }
+
+    #[test]
+    fn parse_env_bool_recognizes_common_values() {
+        assert_eq!(parse_env_bool(Some(OsStr::new("1"))), Some(true));
+        assert_eq!(parse_env_bool(Some(OsStr::new("TRUE"))), Some(true));
+        assert_eq!(parse_env_bool(Some(OsStr::new("0"))), Some(false));
+        assert_eq!(parse_env_bool(Some(OsStr::new("off"))), Some(false));
+        assert_eq!(parse_env_bool(Some(OsStr::new("maybe"))), None);
+        assert_eq!(parse_env_bool(None), None);
+    }
+
     fn test_event(
         occurred_at_unix_ms: i64,
         session_id: Option<&str>,
@@ -1402,6 +1720,37 @@ mod tests {
             speed: Some(UsageSpeed::Standard),
             usage: TokenUsage::new(1, 2, 0, 0, None),
             raw_cost_usd: Some(0.01),
+        }
+    }
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            let mut path = std::env::temp_dir();
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+            path.push(format!(
+                "cusage-rs-main-tests-{}-{timestamp}-{counter}",
+                std::process::id()
+            ));
+            create_dir_all(&path).expect("failed to create test directory");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = remove_dir_all(&self.path);
         }
     }
 }
