@@ -7,11 +7,12 @@ use cusage_rs::pricing::{CostMode, PricingCatalog};
 use cusage_rs::report::{
     BlocksReport, DailyReport, MonthlyReport, SessionReport, WeeklyReport, build_blocks_report,
     build_daily_report, build_monthly_report, build_session_report, build_statusline_report,
-    build_weekly_report, render_blocks_report_json, render_blocks_report_table,
-    render_daily_report_json, render_daily_report_table, render_monthly_report_json,
-    render_monthly_report_table, render_session_report_json, render_session_report_table,
-    render_statusline_report_json, render_statusline_report_line, render_weekly_report_json,
-    render_weekly_report_table,
+    build_weekly_report, render_blocks_report_breakdown_table, render_blocks_report_json,
+    render_blocks_report_table, render_daily_report_breakdown_table, render_daily_report_json,
+    render_daily_report_table, render_monthly_report_breakdown_table, render_monthly_report_json,
+    render_monthly_report_table, render_session_report_breakdown_table, render_session_report_json,
+    render_session_report_table, render_statusline_report_json, render_statusline_report_line,
+    render_weekly_report_breakdown_table, render_weekly_report_json, render_weekly_report_table,
 };
 use cusage_rs::runtime_config::{
     CommandConfigLayer, load_auto_config_layer, load_custom_config_layer,
@@ -96,7 +97,7 @@ struct TableRenderOptions {
 
 impl TableRenderOptions {
     fn has_custom_behavior(self) -> bool {
-        self.breakdown || self.compact || self.locale_decimal_comma || self.instances
+        self.compact || self.locale_decimal_comma || self.instances
     }
 }
 
@@ -191,7 +192,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let cli = Cli::parse_from(args);
+    let cli = Cli::parse_from(normalize_default_daily_args(args));
     let command = cli.command.unwrap_or(Command::Daily(ReportArgs::default()));
     let output = match describe_command(&command) {
         Ok(output) => output,
@@ -203,6 +204,30 @@ where
 
     print!("{output}");
     ExitCode::SUCCESS
+}
+
+fn normalize_default_daily_args<I, T>(args: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let mut normalized = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    if should_inject_default_daily_subcommand(&normalized) {
+        normalized.insert(1, OsString::from("daily"));
+    }
+    normalized
+}
+
+fn should_inject_default_daily_subcommand(args: &[OsString]) -> bool {
+    let Some(first_arg) = args.get(1).and_then(|arg| arg.to_str()) else {
+        return false;
+    };
+
+    if matches!(first_arg, "-h" | "--help" | "-V" | "--version") {
+        return false;
+    }
+
+    first_arg.starts_with('-')
 }
 
 fn describe_command(command: &Command) -> Result<String, String> {
@@ -221,8 +246,7 @@ fn prepare_events(args: &ResolvedReportArgs) -> Result<PreparedEvents, String> {
     let data_roots = DataRootOptions::from_environment().resolve_project_roots();
     let discovered = discover_session_files(&data_roots);
     let parsed = parse_jsonl_files(&discovered.files);
-    let filtered = apply_event_filters(&parsed.events, &filters);
-    let events = shift_events_for_timezone(filtered, filters.timezone_offset_minutes);
+    let events = filter_and_shift_events(parsed.events, &filters);
     let locale_decimal_comma = args
         .locale
         .as_deref()
@@ -487,11 +511,19 @@ fn parse_env_bool(raw: Option<&std::ffi::OsStr>) -> Option<bool> {
 
 fn render_daily_table(report: &DailyReport, prepared: &PreparedEvents) -> String {
     if !prepared.table_options.has_custom_behavior() {
-        return render_daily_report_table(
-            report,
-            prepared.discovery_warning_count,
-            prepared.parse_warning_count,
-        );
+        return if prepared.table_options.breakdown {
+            render_daily_report_breakdown_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        } else {
+            render_daily_report_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        };
     }
 
     let options = prepared.table_options;
@@ -599,11 +631,19 @@ fn render_daily_table(report: &DailyReport, prepared: &PreparedEvents) -> String
 
 fn render_weekly_table(report: &WeeklyReport, prepared: &PreparedEvents) -> String {
     if !prepared.table_options.has_custom_behavior() {
-        return render_weekly_report_table(
-            report,
-            prepared.discovery_warning_count,
-            prepared.parse_warning_count,
-        );
+        return if prepared.table_options.breakdown {
+            render_weekly_report_breakdown_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        } else {
+            render_weekly_report_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        };
     }
 
     let options = prepared.table_options;
@@ -714,11 +754,19 @@ fn render_weekly_table(report: &WeeklyReport, prepared: &PreparedEvents) -> Stri
 
 fn render_monthly_table(report: &MonthlyReport, prepared: &PreparedEvents) -> String {
     if !prepared.table_options.has_custom_behavior() {
-        return render_monthly_report_table(
-            report,
-            prepared.discovery_warning_count,
-            prepared.parse_warning_count,
-        );
+        return if prepared.table_options.breakdown {
+            render_monthly_report_breakdown_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        } else {
+            render_monthly_report_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        };
     }
 
     let options = prepared.table_options;
@@ -826,11 +874,19 @@ fn render_monthly_table(report: &MonthlyReport, prepared: &PreparedEvents) -> St
 
 fn render_session_table(report: &SessionReport, prepared: &PreparedEvents) -> String {
     if !prepared.table_options.has_custom_behavior() {
-        return render_session_report_table(
-            report,
-            prepared.discovery_warning_count,
-            prepared.parse_warning_count,
-        );
+        return if prepared.table_options.breakdown {
+            render_session_report_breakdown_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        } else {
+            render_session_report_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        };
     }
 
     let options = prepared.table_options;
@@ -940,11 +996,19 @@ fn render_session_table(report: &SessionReport, prepared: &PreparedEvents) -> St
 
 fn render_blocks_table(report: &BlocksReport, prepared: &PreparedEvents) -> String {
     if !prepared.table_options.has_custom_behavior() {
-        return render_blocks_report_table(
-            report,
-            prepared.discovery_warning_count,
-            prepared.parse_warning_count,
-        );
+        return if prepared.table_options.breakdown {
+            render_blocks_report_breakdown_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        } else {
+            render_blocks_report_table(
+                report,
+                prepared.discovery_warning_count,
+                prepared.parse_warning_count,
+            )
+        };
     }
 
     let options = prepared.table_options;
@@ -1134,6 +1198,7 @@ fn locale_uses_decimal_comma(locale: &str) -> bool {
     )
 }
 
+#[cfg(test)]
 fn apply_event_filters(events: &[UsageEvent], filters: &SharedFilters) -> Vec<UsageEvent> {
     let since_ms = filters
         .since
@@ -1167,6 +1232,43 @@ fn apply_event_filters(events: &[UsageEvent], filters: &SharedFilters) -> Vec<Us
         .collect()
 }
 
+fn filter_and_shift_events(events: Vec<UsageEvent>, filters: &SharedFilters) -> Vec<UsageEvent> {
+    let since_ms = filters
+        .since
+        .map(|since| day_start_unix_ms(since, filters.timezone_offset_minutes));
+    let until_ms = filters
+        .until
+        .map(|until| day_end_unix_ms(until, filters.timezone_offset_minutes));
+    let shift_ms = i64::from(filters.timezone_offset_minutes).saturating_mul(MILLIS_PER_MINUTE);
+
+    let mut filtered = Vec::with_capacity(events.len());
+    for mut event in events {
+        if let Some(since_ms) = since_ms
+            && event.occurred_at_unix_ms < since_ms
+        {
+            continue;
+        }
+        if let Some(until_ms) = until_ms
+            && event.occurred_at_unix_ms > until_ms
+        {
+            continue;
+        }
+        if let Some(expected_project) = filters.project.as_deref()
+            && normalized_optional_string(event.project.as_deref()).as_deref()
+                != Some(expected_project)
+        {
+            continue;
+        }
+        if shift_ms != 0 {
+            event.occurred_at_unix_ms = event.occurred_at_unix_ms.saturating_add(shift_ms);
+        }
+        filtered.push(event);
+    }
+
+    filtered
+}
+
+#[cfg(test)]
 fn shift_events_for_timezone(
     mut events: Vec<UsageEvent>,
     timezone_offset_minutes: i32,
@@ -1353,6 +1455,29 @@ mod tests {
         let cli = Cli::parse_from(["cusage-rs"]);
         let command = cli.command.unwrap_or(Command::Daily(ReportArgs::default()));
         assert!(matches!(command, Command::Daily(_)));
+    }
+
+    #[test]
+    fn injects_daily_subcommand_for_top_level_report_flags() {
+        let cli = Cli::parse_from(normalize_default_daily_args([
+            "cusage-rs",
+            "--breakdown",
+            "--timezone",
+            "UTC",
+        ]));
+        let command = cli.command.expect("expected parsed command");
+        let Command::Daily(args) = command else {
+            panic!("expected daily command");
+        };
+        assert!(args.breakdown);
+        assert_eq!(args.timezone.as_deref(), Some("UTC"));
+    }
+
+    #[test]
+    fn preserves_top_level_help_without_injecting_daily() {
+        let normalized = normalize_default_daily_args(["cusage-rs", "--help"]);
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[1].to_str(), Some("--help"));
     }
 
     #[test]
@@ -1584,6 +1709,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: DailyReportTotals {
                 days: 1,

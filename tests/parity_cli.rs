@@ -103,6 +103,34 @@ fn session_table_supports_compact_breakdown_instances_and_locale_flags() {
 }
 
 #[test]
+fn daily_breakdown_matches_fixture() {
+    let expected = read_fixture("cli/daily_breakdown/expected.txt");
+    let claude_config_dir = fixture_root().join("oracle/daily/claude-config");
+
+    let first = run_cli(
+        &["daily", "--timezone", "UTC", "--breakdown"],
+        &claude_config_dir,
+    );
+    let second = run_cli(
+        &["daily", "--timezone", "UTC", "--breakdown"],
+        &claude_config_dir,
+    );
+
+    assert_success(&first, "daily breakdown fixture");
+    assert_success(&second, "daily breakdown fixture repeat");
+
+    let expected = normalize_line_end(expected);
+    let first_stdout = normalize_line_end(stdout_text(&first));
+    let second_stdout = normalize_line_end(stdout_text(&second));
+
+    assert_eq!(first_stdout, expected, "daily breakdown output mismatch");
+    assert_eq!(
+        first_stdout, second_stdout,
+        "daily breakdown output is not stable"
+    );
+}
+
+#[test]
 fn human_readable_modes_match_layout_fixtures() {
     let claude_config_dir = fixture_root().join("session/basic/claude-config");
     let cases = [
@@ -201,7 +229,7 @@ fn malformed_jsonl_is_tolerated_with_deterministic_warning_counts() {
         "malformed fixture output is not stable"
     );
     assert!(
-        first_stdout.contains("\"parse\": 3"),
+        first_stdout.contains("\"parse\": 1"),
         "expected parse warning count to be reported"
     );
 }

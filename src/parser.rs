@@ -598,6 +598,9 @@ fn parse_jsonl_reader<R: BufRead>(
         if trimmed.is_empty() {
             continue;
         }
+        if !might_contain_usage_payload(trimmed) {
+            continue;
+        }
 
         let raw_value = match JsonParser::new(trimmed).parse() {
             Ok(value) => value,
@@ -641,6 +644,16 @@ fn parse_jsonl_reader<R: BufRead>(
     }
 
     output
+}
+
+fn might_contain_usage_payload(line: &str) -> bool {
+    line.contains("\"usage\"")
+        || line.contains("\"input_tokens\"")
+        || line.contains("\"inputTokens\"")
+        || line.contains("\"prompt_tokens\"")
+        || line.contains("\"promptTokens\"")
+        || line.contains("\"completion_tokens\"")
+        || line.contains("\"completionTokens\"")
 }
 
 fn normalize_usage_event(
@@ -1107,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn records_line_warnings_and_keeps_parsing() {
+    fn records_warnings_only_for_billable_looking_lines() {
         let test_dir = TestDir::new();
         let file = test_dir.path().join("warnings.jsonl");
         let content = concat!(
@@ -1122,20 +1135,9 @@ mod tests {
         let parsed = parse_jsonl_file(&file);
 
         assert_eq!(parsed.events.len(), 1);
-        assert_eq!(parsed.warnings.len(), 3);
-        assert!(
-            parsed.warnings[0].message.contains("invalid JSON line"),
-            "unexpected warning message: {}",
-            parsed.warnings[0].message
-        );
-        assert_eq!(
-            parsed.warnings[1].message,
-            "root JSON value must be an object"
-        );
-        assert_eq!(parsed.warnings[2].message, "missing parseable timestamp");
-        assert_eq!(parsed.warnings[0].line_number, Some(2));
-        assert_eq!(parsed.warnings[1].line_number, Some(3));
-        assert_eq!(parsed.warnings[2].line_number, Some(4));
+        assert_eq!(parsed.warnings.len(), 1);
+        assert_eq!(parsed.warnings[0].message, "missing parseable timestamp");
+        assert_eq!(parsed.warnings[0].line_number, Some(4));
     }
 
     #[test]

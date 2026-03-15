@@ -7,6 +7,16 @@ use std::collections::BTreeMap;
 const DEFAULT_BLOCK_WINDOW_MS: i64 = 5 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, PartialEq, Default)]
+pub struct ModelBreakdown {
+    pub model_name: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub cost_usd: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DailyReport {
     pub days: Vec<DailyReportDay>,
     pub totals: DailyReportTotals,
@@ -27,6 +37,8 @@ pub struct DailyReportDay {
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
+    pub models_used: Vec<String>,
+    pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -68,6 +80,8 @@ pub struct WeeklyReportWeek {
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
+    pub models_used: Vec<String>,
+    pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -108,6 +122,8 @@ pub struct MonthlyReportMonth {
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
+    pub models_used: Vec<String>,
+    pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -149,6 +165,8 @@ pub struct SessionReportSession {
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
+    pub models_used: Vec<String>,
+    pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -192,6 +210,8 @@ pub struct BlocksReportBlock {
     pub entries_with_raw_cost: usize,
     pub entries_with_calculated_cost: usize,
     pub entries_with_missing_cost: usize,
+    pub models_used: Vec<String>,
+    pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -283,6 +303,58 @@ fn apply_resolved_cost(
     }
 }
 
+fn apply_model_breakdown(
+    models_used: &mut Vec<String>,
+    model_breakdowns: &mut Vec<ModelBreakdown>,
+    event: &UsageEvent,
+    resolved: crate::pricing::ResolvedCost,
+) {
+    let Some(model_name) = normalized_optional_string(event.model.as_deref()) else {
+        return;
+    };
+
+    if !models_used.iter().any(|existing| existing == &model_name) {
+        models_used.push(model_name.clone());
+    }
+
+    let breakdown = model_breakdowns
+        .iter_mut()
+        .find(|breakdown| breakdown.model_name == model_name);
+    match breakdown {
+        Some(existing) => {
+            existing.input_tokens = existing
+                .input_tokens
+                .saturating_add(event.usage.input_tokens);
+            existing.output_tokens = existing
+                .output_tokens
+                .saturating_add(event.usage.output_tokens);
+            existing.cache_creation_input_tokens = existing
+                .cache_creation_input_tokens
+                .saturating_add(event.usage.cache_creation_input_tokens);
+            existing.cache_read_input_tokens = existing
+                .cache_read_input_tokens
+                .saturating_add(event.usage.cache_read_input_tokens);
+            existing.cost_usd += resolved.cost_usd;
+        }
+        None => model_breakdowns.push(ModelBreakdown {
+            model_name,
+            input_tokens: event.usage.input_tokens,
+            output_tokens: event.usage.output_tokens,
+            cache_creation_input_tokens: event.usage.cache_creation_input_tokens,
+            cache_read_input_tokens: event.usage.cache_read_input_tokens,
+            cost_usd: resolved.cost_usd,
+        }),
+    }
+
+    model_breakdowns.sort_by(|left, right| {
+        right
+            .cost_usd
+            .partial_cmp(&left.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.model_name.cmp(&right.model_name))
+    });
+}
+
 #[must_use]
 pub fn build_daily_report(
     events: &[UsageEvent],
@@ -321,6 +393,12 @@ pub fn build_daily_report(
             &mut row.entries_with_raw_cost,
             &mut row.entries_with_calculated_cost,
             &mut row.entries_with_missing_cost,
+            resolved,
+        );
+        apply_model_breakdown(
+            &mut row.models_used,
+            &mut row.model_breakdowns,
+            event,
             resolved,
         );
     }
@@ -410,6 +488,12 @@ pub fn build_weekly_report(
             &mut row.entries_with_missing_cost,
             resolved,
         );
+        apply_model_breakdown(
+            &mut row.models_used,
+            &mut row.model_breakdowns,
+            event,
+            resolved,
+        );
     }
 
     let mut report = WeeklyReport {
@@ -492,6 +576,12 @@ pub fn build_monthly_report(
             &mut row.entries_with_raw_cost,
             &mut row.entries_with_calculated_cost,
             &mut row.entries_with_missing_cost,
+            resolved,
+        );
+        apply_model_breakdown(
+            &mut row.models_used,
+            &mut row.model_breakdowns,
+            event,
             resolved,
         );
     }
@@ -588,6 +678,12 @@ pub fn build_session_report(
             &mut row.entries_with_raw_cost,
             &mut row.entries_with_calculated_cost,
             &mut row.entries_with_missing_cost,
+            resolved,
+        );
+        apply_model_breakdown(
+            &mut row.models_used,
+            &mut row.model_breakdowns,
+            event,
             resolved,
         );
     }
@@ -701,6 +797,12 @@ pub fn build_blocks_report(
             &mut row.entries_with_raw_cost,
             &mut row.entries_with_calculated_cost,
             &mut row.entries_with_missing_cost,
+            resolved,
+        );
+        apply_model_breakdown(
+            &mut row.models_used,
+            &mut row.model_breakdowns,
+            event,
             resolved,
         );
     }
@@ -1013,6 +1115,17 @@ struct WarningCounts {
     parse: usize,
 }
 
+struct BreakdownSummaryRow<'a> {
+    label: String,
+    models_display: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_creation_tokens: u64,
+    cache_read_tokens: u64,
+    cost_usd: f64,
+    model_breakdowns: &'a [ModelBreakdown],
+}
+
 fn cost_provenance_triplet(raw: usize, calculated: usize, missing: usize) -> String {
     format!("{raw}/{calculated}/{missing}")
 }
@@ -1058,15 +1171,27 @@ fn format_table_cell(value: &str, width: usize, align: TableAlign) -> String {
     }
 }
 
-fn render_table_row(cells: &[String], widths: &[usize], aligns: &[TableAlign]) -> String {
-    let mut row = String::from("│");
-    for ((cell, width), align) in cells.iter().zip(widths).zip(aligns) {
-        row.push(' ');
-        row.push_str(&format_table_cell(cell, *width, *align));
-        row.push(' ');
-        row.push('│');
+fn render_table_rows(cells: &[String], widths: &[usize], aligns: &[TableAlign]) -> Vec<String> {
+    let cell_lines = cells
+        .iter()
+        .map(|cell| cell.lines().map(str::to_owned).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let row_height = cell_lines.iter().map(Vec::len).max().unwrap_or(0).max(1);
+
+    let mut rendered_rows = Vec::with_capacity(row_height);
+    for line_index in 0..row_height {
+        let mut row = String::from("│");
+        for ((cell, width), align) in cell_lines.iter().zip(widths).zip(aligns) {
+            let value = cell.get(line_index).map(String::as_str).unwrap_or("");
+            row.push(' ');
+            row.push_str(&format_table_cell(value, *width, *align));
+            row.push(' ');
+            row.push('│');
+        }
+        rendered_rows.push(row);
     }
-    row
+
+    rendered_rows
 }
 
 fn render_title_box(title: &str) -> Vec<String> {
@@ -1122,24 +1247,115 @@ fn render_human_report_table(
     let mut lines = render_title_box(title);
     lines.push(String::new());
     lines.push(summary_line.to_owned());
-    lines.push(provenance_line.to_owned());
+    if !provenance_line.is_empty() {
+        lines.push(provenance_line.to_owned());
+    }
     lines.push(String::new());
     lines.push(top_border);
-    lines.push(render_table_row(&header_cells, &widths, &header_alignments));
+    lines.extend(render_table_rows(
+        &header_cells,
+        &widths,
+        &header_alignments,
+    ));
     lines.push(mid_border.clone());
 
     for row in rows {
-        lines.push(render_table_row(row, &widths, &row_alignments));
+        lines.extend(render_table_rows(row, &widths, &row_alignments));
     }
 
     lines.push(mid_border);
-    lines.push(render_table_row(total_row, &widths, &row_alignments));
+    lines.extend(render_table_rows(total_row, &widths, &row_alignments));
     lines.push(bottom_border);
     lines.push(format!(
         "Warnings: discovery={} parse={}",
         warnings.discovery, warnings.parse
     ));
     lines.join("\n") + "\n"
+}
+
+fn format_model_name(model_name: &str) -> String {
+    let trimmed = model_name.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_owned();
+    }
+
+    let provider_stripped = trimmed
+        .strip_prefix("anthropic/")
+        .or_else(|| trimmed.strip_prefix("openrouter/"))
+        .unwrap_or(trimmed);
+    let normalized = provider_stripped
+        .strip_prefix("anthropic.")
+        .unwrap_or(provider_stripped);
+
+    let Some(stripped) = normalized.strip_prefix("claude-") else {
+        return normalized.to_owned();
+    };
+
+    let mut segments = stripped.split('-').collect::<Vec<_>>();
+    if segments
+        .last()
+        .is_some_and(|segment| segment.len() == 8 && segment.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        segments.pop();
+    }
+
+    segments.join("-")
+}
+
+fn format_models_display_multiline(models: &[String]) -> String {
+    let mut formatted = Vec::new();
+    for model in models {
+        let display = format_model_name(model);
+        if !formatted.iter().any(|existing| existing == &display) {
+            formatted.push(display);
+        }
+    }
+    formatted.sort();
+    formatted
+        .into_iter()
+        .map(|model| format!("- {model}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn breakdown_rows(summary: BreakdownSummaryRow<'_>) -> Vec<Vec<String>> {
+    let mut rows = vec![vec![
+        summary.label,
+        summary.models_display,
+        format_count_u64(summary.input_tokens),
+        format_count_u64(summary.output_tokens),
+        format_count_u64(summary.cache_creation_tokens),
+        format_count_u64(summary.cache_read_tokens),
+        format_count_u64(
+            summary
+                .input_tokens
+                .saturating_add(summary.output_tokens)
+                .saturating_add(summary.cache_creation_tokens)
+                .saturating_add(summary.cache_read_tokens),
+        ),
+        format_money_human(summary.cost_usd),
+    ]];
+
+    for breakdown in summary.model_breakdowns {
+        rows.push(vec![
+            format!("  └─ {}", format_model_name(&breakdown.model_name)),
+            String::new(),
+            format_count_u64(breakdown.input_tokens),
+            format_count_u64(breakdown.output_tokens),
+            format_count_u64(breakdown.cache_creation_input_tokens),
+            format_count_u64(breakdown.cache_read_input_tokens),
+            format_count_u64(
+                breakdown
+                    .input_tokens
+                    .saturating_add(breakdown.output_tokens)
+                    .saturating_add(breakdown.cache_creation_input_tokens)
+                    .saturating_add(breakdown.cache_read_input_tokens),
+            ),
+            format_money_human(breakdown.cost_usd),
+        ]);
+    }
+
+    rows
 }
 
 #[must_use]
@@ -1215,6 +1431,68 @@ pub fn render_daily_report_table(
                 report.totals.entries_with_missing_cost,
             )
         ),
+        &columns,
+        &rows,
+        &total_row,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
+    )
+}
+
+#[must_use]
+pub fn render_daily_report_breakdown_table(
+    report: &DailyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let columns = [
+        ("Date", TableAlign::Left),
+        ("Models", TableAlign::Left),
+        ("Input", TableAlign::Right),
+        ("Output", TableAlign::Right),
+        ("Cache Create", TableAlign::Right),
+        ("Cache Read", TableAlign::Right),
+        ("Total Tokens", TableAlign::Right),
+        ("Cost (USD)", TableAlign::Right),
+    ];
+
+    let mut rows = Vec::new();
+    for day in &report.days {
+        rows.extend(breakdown_rows(BreakdownSummaryRow {
+            label: day.date.clone(),
+            models_display: format_models_display_multiline(&day.models_used),
+            input_tokens: day.input_tokens,
+            output_tokens: day.output_tokens,
+            cache_creation_tokens: day.cache_creation_input_tokens,
+            cache_read_tokens: day.cache_read_input_tokens,
+            cost_usd: day.total_cost_usd,
+            model_breakdowns: &day.model_breakdowns,
+        }));
+    }
+
+    let total_row = vec![
+        "Total".to_owned(),
+        String::new(),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
+    ];
+
+    render_human_report_table(
+        "Claude Code Token Usage Report - Daily",
+        &format!(
+            "Days: {} | Entries: {} | Tokens: {} | Cost USD: {}",
+            format_count_usize(report.totals.days),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
+        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -1431,6 +1709,68 @@ pub fn render_weekly_report_table(
 }
 
 #[must_use]
+pub fn render_weekly_report_breakdown_table(
+    report: &WeeklyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let columns = [
+        ("Week", TableAlign::Left),
+        ("Models", TableAlign::Left),
+        ("Input", TableAlign::Right),
+        ("Output", TableAlign::Right),
+        ("Cache Create", TableAlign::Right),
+        ("Cache Read", TableAlign::Right),
+        ("Total Tokens", TableAlign::Right),
+        ("Cost (USD)", TableAlign::Right),
+    ];
+
+    let mut rows = Vec::new();
+    for week in &report.weeks {
+        rows.extend(breakdown_rows(BreakdownSummaryRow {
+            label: week.week_start.clone(),
+            models_display: format_models_display_multiline(&week.models_used),
+            input_tokens: week.input_tokens,
+            output_tokens: week.output_tokens,
+            cache_creation_tokens: week.cache_creation_input_tokens,
+            cache_read_tokens: week.cache_read_input_tokens,
+            cost_usd: week.total_cost_usd,
+            model_breakdowns: &week.model_breakdowns,
+        }));
+    }
+
+    let total_row = vec![
+        "Total".to_owned(),
+        String::new(),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
+    ];
+
+    render_human_report_table(
+        "Claude Code Token Usage Report - Weekly",
+        &format!(
+            "Weeks: {} | Entries: {} | Tokens: {} | Cost USD: {}",
+            format_count_usize(report.totals.weeks),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
+        ),
+        "",
+        &columns,
+        &rows,
+        &total_row,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
+    )
+}
+
+#[must_use]
 pub fn render_monthly_report_json(
     report: &MonthlyReport,
     discovery_warning_count: usize,
@@ -1621,6 +1961,68 @@ pub fn render_monthly_report_table(
                 report.totals.entries_with_missing_cost,
             )
         ),
+        &columns,
+        &rows,
+        &total_row,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
+    )
+}
+
+#[must_use]
+pub fn render_monthly_report_breakdown_table(
+    report: &MonthlyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let columns = [
+        ("Month", TableAlign::Left),
+        ("Models", TableAlign::Left),
+        ("Input", TableAlign::Right),
+        ("Output", TableAlign::Right),
+        ("Cache Create", TableAlign::Right),
+        ("Cache Read", TableAlign::Right),
+        ("Total Tokens", TableAlign::Right),
+        ("Cost (USD)", TableAlign::Right),
+    ];
+
+    let mut rows = Vec::new();
+    for month in &report.months {
+        rows.extend(breakdown_rows(BreakdownSummaryRow {
+            label: month.month.clone(),
+            models_display: format_models_display_multiline(&month.models_used),
+            input_tokens: month.input_tokens,
+            output_tokens: month.output_tokens,
+            cache_creation_tokens: month.cache_creation_input_tokens,
+            cache_read_tokens: month.cache_read_input_tokens,
+            cost_usd: month.total_cost_usd,
+            model_breakdowns: &month.model_breakdowns,
+        }));
+    }
+
+    let total_row = vec![
+        "Total".to_owned(),
+        String::new(),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
+    ];
+
+    render_human_report_table(
+        "Claude Code Token Usage Report - Monthly",
+        &format!(
+            "Months: {} | Entries: {} | Tokens: {} | Cost USD: {}",
+            format_count_usize(report.totals.months),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
+        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -1840,6 +2242,74 @@ pub fn render_session_report_table(
 }
 
 #[must_use]
+pub fn render_session_report_breakdown_table(
+    report: &SessionReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let columns = [
+        ("Session", TableAlign::Left),
+        ("Models", TableAlign::Left),
+        ("Input", TableAlign::Right),
+        ("Output", TableAlign::Right),
+        ("Cache Create", TableAlign::Right),
+        ("Cache Read", TableAlign::Right),
+        ("Total Tokens", TableAlign::Right),
+        ("Cost (USD)", TableAlign::Right),
+    ];
+
+    let mut rows = Vec::new();
+    for session in &report.sessions {
+        let label = match (&session.session_id, &session.project) {
+            (Some(session_id), Some(project)) => format!("{session_id} ({project})"),
+            (Some(session_id), None) => session_id.clone(),
+            (None, Some(project)) => project.clone(),
+            (None, None) => "-".to_owned(),
+        };
+        rows.extend(breakdown_rows(BreakdownSummaryRow {
+            label,
+            models_display: format_models_display_multiline(&session.models_used),
+            input_tokens: session.input_tokens,
+            output_tokens: session.output_tokens,
+            cache_creation_tokens: session.cache_creation_input_tokens,
+            cache_read_tokens: session.cache_read_input_tokens,
+            cost_usd: session.total_cost_usd,
+            model_breakdowns: &session.model_breakdowns,
+        }));
+    }
+
+    let total_row = vec![
+        "Total".to_owned(),
+        String::new(),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
+    ];
+
+    render_human_report_table(
+        "Claude Code Token Usage Report - Session",
+        &format!(
+            "Sessions: {} | Entries: {} | Tokens: {} | Cost USD: {}",
+            format_count_usize(report.totals.sessions),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
+        ),
+        "",
+        &columns,
+        &rows,
+        &total_row,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
+    )
+}
+
+#[must_use]
 pub fn render_blocks_report_json(
     report: &BlocksReport,
     discovery_warning_count: usize,
@@ -2048,6 +2518,68 @@ pub fn render_blocks_report_table(
                 report.totals.entries_with_missing_cost,
             )
         ),
+        &columns,
+        &rows,
+        &total_row,
+        WarningCounts {
+            discovery: discovery_warning_count,
+            parse: parse_warning_count,
+        },
+    )
+}
+
+#[must_use]
+pub fn render_blocks_report_breakdown_table(
+    report: &BlocksReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let columns = [
+        ("Block Window", TableAlign::Left),
+        ("Models", TableAlign::Left),
+        ("Input", TableAlign::Right),
+        ("Output", TableAlign::Right),
+        ("Cache Create", TableAlign::Right),
+        ("Cache Read", TableAlign::Right),
+        ("Total Tokens", TableAlign::Right),
+        ("Cost (USD)", TableAlign::Right),
+    ];
+
+    let mut rows = Vec::new();
+    for block in &report.blocks {
+        rows.extend(breakdown_rows(BreakdownSummaryRow {
+            label: format!("{}..{}", block.block_start, block.block_end),
+            models_display: format_models_display_multiline(&block.models_used),
+            input_tokens: block.input_tokens,
+            output_tokens: block.output_tokens,
+            cache_creation_tokens: block.cache_creation_input_tokens,
+            cache_read_tokens: block.cache_read_input_tokens,
+            cost_usd: block.total_cost_usd,
+            model_breakdowns: &block.model_breakdowns,
+        }));
+    }
+
+    let total_row = vec![
+        "Total".to_owned(),
+        String::new(),
+        format_count_u64(report.totals.input_tokens),
+        format_count_u64(report.totals.output_tokens),
+        format_count_u64(report.totals.cache_creation_input_tokens),
+        format_count_u64(report.totals.cache_read_input_tokens),
+        format_count_u64(report.totals.total_tokens),
+        format_money_human(report.totals.total_cost_usd),
+    ];
+
+    render_human_report_table(
+        "Claude Code Token Usage Report - Blocks",
+        &format!(
+            "Blocks: {} | Entries: {} | Tokens: {} | Cost USD: {}",
+            format_count_usize(report.totals.blocks),
+            format_count_usize(report.totals.entries),
+            format_count_u64(report.totals.total_tokens),
+            format_money_human(report.totals.total_cost_usd)
+        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -2372,6 +2904,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: DailyReportTotals {
                 days: 1,
@@ -2464,6 +2998,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: WeeklyReportTotals {
                 weeks: 1,
@@ -2557,6 +3093,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: MonthlyReportTotals {
                 months: 1,
@@ -2678,6 +3216,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: SessionReportTotals {
                 sessions: 1,
@@ -2813,6 +3353,8 @@ mod tests {
                 entries_with_raw_cost: 1,
                 entries_with_calculated_cost: 1,
                 entries_with_missing_cost: 0,
+                models_used: Vec::new(),
+                model_breakdowns: Vec::new(),
             }],
             totals: BlocksReportTotals {
                 blocks: 1,
