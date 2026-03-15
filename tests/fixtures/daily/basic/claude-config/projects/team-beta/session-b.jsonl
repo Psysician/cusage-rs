@@ -1,0 +1,2 @@
+{"timestamp":"2026-03-11T00:30:00Z","type":"assistant","usage":{"prompt_tokens":40,"completion_tokens":20},"total_cost_usd":0.06}
+{"timestamp":"2026-03-11T08:00:00+02:00","type":"assistant","usage":{"inputTokens":"60","outputTokens":"30","cacheReadInputTokens":"10"},"costUsd":"0.09"}

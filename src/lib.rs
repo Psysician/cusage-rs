@@ -3,3 +3,4 @@ pub mod discovery;
 pub mod domain;
 pub mod parser;
 pub mod pricing;
+pub mod report;

@@ -1,4 +1,9 @@
 use clap::{Args, Parser, Subcommand};
+use cusage_rs::config::DataRootOptions;
+use cusage_rs::discovery::discover_session_files;
+use cusage_rs::parser::parse_jsonl_files;
+use cusage_rs::pricing::{CostMode, PricingCatalog};
+use cusage_rs::report::{build_daily_report, render_daily_report_json, render_daily_report_table};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -68,7 +73,7 @@ where
 
 fn describe_command(command: &Command) -> String {
     match command {
-        Command::Daily(args) => render_report_placeholder("daily", args),
+        Command::Daily(args) => render_daily_command(args),
         Command::Monthly(args) => render_report_placeholder("monthly", args),
         Command::Session(args) => render_report_placeholder("session", args),
         Command::Blocks(args) => render_report_placeholder("blocks", args),
@@ -80,6 +85,19 @@ fn describe_command(command: &Command) -> String {
                     .to_owned()
             }
         }
+    }
+}
+
+fn render_daily_command(args: &ReportArgs) -> String {
+    let data_roots = DataRootOptions::from_environment().resolve_project_roots();
+    let discovered = discover_session_files(&data_roots);
+    let parsed = parse_jsonl_files(&discovered.files);
+    let report = build_daily_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+
+    if args.json {
+        render_daily_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+    } else {
+        render_daily_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
     }
 }
 
