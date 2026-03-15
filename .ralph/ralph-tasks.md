@@ -13,5 +13,5 @@
 - [x] Implement shared flags and filtering behavior: `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--instances`, `--project`, `--timezone`, `--locale`.
 - [x] Implement documented config-file behavior, custom path support, and offline/custom-root behavior where part of the public contract.
 - [x] Add golden and parity integration tests for representative command/flag combinations and malformed-input edge cases.
-- [ ] Ensure `make verify` passes and remove placeholder implementations for core report modes and filters.
+- [x] Ensure `make verify` passes and remove placeholder implementations for core report modes and filters.
 - [ ] Update repository docs to describe implemented behavior, parity coverage, and any explicit residual deltas.

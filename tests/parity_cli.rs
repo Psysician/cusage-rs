@@ -47,7 +47,10 @@ fn daily_json_respects_since_until_project_and_timezone_flags() {
     let first_stdout = normalize_line_end(stdout_text(&first));
     let second_stdout = normalize_line_end(stdout_text(&second));
 
-    assert_eq!(first_stdout, expected, "daily filtered json output mismatch");
+    assert_eq!(
+        first_stdout, expected,
+        "daily filtered json output mismatch"
+    );
     assert_eq!(
         first_stdout, second_stdout,
         "daily filtered json output is not stable"
@@ -150,12 +153,7 @@ fn inverted_since_until_returns_expected_error() {
 
     let output = run_cli(
         &[
-            "daily",
-            "--json",
-            "--since",
-            "20260312",
-            "--until",
-            "20260310",
+            "daily", "--json", "--since", "20260312", "--until", "20260310",
         ],
         &claude_config_dir,
     );

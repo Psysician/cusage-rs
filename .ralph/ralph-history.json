@@ -430,9 +430,40 @@
         "fs::create_dir_all(&path).expect(\"failed to create test directory\");",
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
       ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-03-15T17:59:44.471Z",
+      "endedAt": "2026-03-15T18:01:57.822Z",
+      "durationMs": 133204,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "33": 1,
+        "codex-lb": 2,
+        "full": 1,
+        "unittests": 1,
+        "cargo": 4
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "tests/parity_cli.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=1.879 salience=1.000 id=00d29d04-1e98-4878-b5ac-f0de9f07238c\\nCompleted Ralph iteration",
+        "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs ccusage rust rewrite make verify placeholders report modes filters parity\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n   ",
+        "Task is marked in progress. I’m running `make verify` now to identify any failing tests or remaining placeholder paths tied to report modes and filters.",
+        "`make verify` failed immediately on formatting in `tests/parity_cli.rs`. I’m applying `cargo fmt` first, then rerunning `make verify`; after it’s green I’ll explicitly scan for any remaining placehold",
+        "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"both\",\"content\":\"cusage-rs Ralph iteration 14 task completed: make verify now passes after applying cargo fmt to tests/parity_cli.rs; scanned sr",
+        "\"text\": \"Error: Facts array is required when type is 'both'. Please provide at least one fact.\"",
+        "tool openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"contextual\",\"content\":\"Session summary for cusage-rs Ralph iteration 14: marked task 'Ensure make verify passes and remove placeholder impl",
+        "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"contextual\",\"content\":\"Session summary for cusage-rs Ralph iteration 14: marked task 'Ensure make verify passes and remove placeholder implement"
+      ]
     }
   ],
-  "totalDurationMs": 6310594,
+  "totalDurationMs": 6443798,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 8 contextual memories and 867 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
@@ -484,7 +515,7 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s": 1,
-      "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 3,
+      "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 4,
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs blocks report mode parity fixtures st": 1,
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs statusline mode, report rendering, CL": 1,
       "error: unexpected argument 'report::tests::renders_statusline_as_single_compact_line' found": 1,
@@ -505,7 +536,14 @@
       "error: unexpected argument '-0' found": 1,
       "fs::create_dir_all(&home_dir).expect(\"failed to create isolated HOME for CLI test\");": 1,
       "fs::create_dir_all(&path).expect(\"failed to create test directory\");": 1,
-      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 1,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs ccusage rust rewrite make verify plac": 1,
+      "Task is marked in progress. I’m running `make verify` now to identify any failing tests or remaining": 1,
+      "`make verify` failed immediately on formatting in `tests/parity_cli.rs`. I’m applying `cargo fmt` fi": 1,
+      "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"both\",\"content\":\"cusage-rs Ralph iteration 1": 1,
+      "\"text\": \"Error: Facts array is required when type is 'both'. Please provide at least one fact.\"": 1,
+      "tool openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"contextual\",\"content\":\"Session summary ": 1,
+      "openmemory.openmemory_store({\"user_id\":\"franky\",\"type\":\"contextual\",\"content\":\"Session summary for c": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
