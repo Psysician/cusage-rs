@@ -167,9 +167,45 @@
         "test parser::tests::parses_multiple_files_with_dedup_and_open_failures ... ok",
         "The parity tests failed because this workspace doesn’t expose `CARGO_BIN_EXE_*` in this setup. I’m switching those tests to run the same discovery→parse→aggregate→render pipeline directly through libr"
       ]
+    },
+    {
+      "iteration": 6,
+      "startedAt": "2026-03-15T16:57:12.272Z",
+      "endedAt": "2026-03-15T17:03:48.582Z",
+      "durationMs": 396216,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "0": 1,
+        "2": 7,
+        "3": 2,
+        "19": 1,
+        "21": 2,
+        "codex-lb": 2,
+        "targeted": 1,
+        "the": 3
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/main.rs",
+        "src/report.rs",
+        "tests/fixtures/weekly/",
+        "tests/parity_weekly.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\"text\": \"Found 8 contextual memories and 883 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=2.579 salience=0.400 id=dde59e24-7f26-4b47-b74a-a2c98c68ec6d\\nAdded src/report.rs modul",
+        "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs weekly report mode parity fixtures deterministic json ccusage rewrite\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n      \\",
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 2571217,
+  "totalDurationMs": 2967433,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 8 contextual memories and 867 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
@@ -201,7 +237,14 @@
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs ccusage rust rewrite daily report mod": 1,
       "Fixtures and parity tests are in place. I’m running formatting and tests now to catch any compile/li": 1,
       "test report::tests::builds_daily_buckets_in_utc_order ... FAILED": 1,
-      "The parity tests failed because this workspace doesn’t expose `CARGO_BIN_EXE_*` in this setup. I’m s": 1
+      "The parity tests failed because this workspace doesn’t expose `CARGO_BIN_EXE_*` in this setup. I’m s": 1,
+      "\"text\": \"Found 8 contextual memories and 883 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs weekly report mode parity fixtures de": 1,
+      "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

@@ -40,6 +40,43 @@ pub struct DailyReportTotals {
     pub entries_with_missing_cost: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WeeklyReport {
+    pub weeks: Vec<WeeklyReportWeek>,
+    pub totals: WeeklyReportTotals,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WeeklyReportWeek {
+    pub week_start: String,
+    pub week_end: String,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WeeklyReportTotals {
+    pub weeks: usize,
+    pub entries: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub entries_with_raw_cost: usize,
+    pub entries_with_calculated_cost: usize,
+    pub entries_with_missing_cost: usize,
+}
+
 #[must_use]
 pub fn build_daily_report(
     events: &[UsageEvent],
@@ -121,6 +158,95 @@ pub fn build_daily_report(
             .totals
             .entries_with_missing_cost
             .saturating_add(day.entries_with_missing_cost);
+    }
+
+    report
+}
+
+#[must_use]
+pub fn build_weekly_report(
+    events: &[UsageEvent],
+    cost_mode: CostMode,
+    pricing: &PricingCatalog,
+) -> WeeklyReport {
+    let mut grouped = BTreeMap::<i64, WeeklyReportWeek>::new();
+
+    for event in events {
+        let week_start_days = utc_week_start_days_from_unix_ms(event.occurred_at_unix_ms);
+        let row = grouped
+            .entry(week_start_days)
+            .or_insert_with(|| WeeklyReportWeek {
+                week_start: utc_day_label_from_days_since_epoch(week_start_days),
+                week_end: utc_day_label_from_days_since_epoch(
+                    utc_week_end_days_from_week_start_days(week_start_days),
+                ),
+                ..WeeklyReportWeek::default()
+            });
+
+        row.entries = row.entries.saturating_add(1);
+        row.input_tokens = row.input_tokens.saturating_add(event.usage.input_tokens);
+        row.output_tokens = row.output_tokens.saturating_add(event.usage.output_tokens);
+        row.cache_creation_input_tokens = row
+            .cache_creation_input_tokens
+            .saturating_add(event.usage.cache_creation_input_tokens);
+        row.cache_read_input_tokens = row
+            .cache_read_input_tokens
+            .saturating_add(event.usage.cache_read_input_tokens);
+        row.total_tokens = row
+            .total_tokens
+            .saturating_add(total_tokens_for_usage(&event.usage));
+
+        let resolved = resolve_event_cost(event, cost_mode, pricing);
+        row.total_cost_usd += resolved.cost_usd;
+        match resolved.source {
+            CostSource::Raw => {
+                row.entries_with_raw_cost = row.entries_with_raw_cost.saturating_add(1)
+            }
+            CostSource::Calculated => {
+                row.entries_with_calculated_cost =
+                    row.entries_with_calculated_cost.saturating_add(1)
+            }
+            CostSource::Missing => {
+                row.entries_with_missing_cost = row.entries_with_missing_cost.saturating_add(1)
+            }
+        }
+    }
+
+    let mut report = WeeklyReport {
+        weeks: grouped.into_values().collect(),
+        totals: WeeklyReportTotals::default(),
+    };
+    report.totals.weeks = report.weeks.len();
+
+    for week in &report.weeks {
+        report.totals.entries = report.totals.entries.saturating_add(week.entries);
+        report.totals.input_tokens = report.totals.input_tokens.saturating_add(week.input_tokens);
+        report.totals.output_tokens = report
+            .totals
+            .output_tokens
+            .saturating_add(week.output_tokens);
+        report.totals.cache_creation_input_tokens = report
+            .totals
+            .cache_creation_input_tokens
+            .saturating_add(week.cache_creation_input_tokens);
+        report.totals.cache_read_input_tokens = report
+            .totals
+            .cache_read_input_tokens
+            .saturating_add(week.cache_read_input_tokens);
+        report.totals.total_tokens = report.totals.total_tokens.saturating_add(week.total_tokens);
+        report.totals.total_cost_usd += week.total_cost_usd;
+        report.totals.entries_with_raw_cost = report
+            .totals
+            .entries_with_raw_cost
+            .saturating_add(week.entries_with_raw_cost);
+        report.totals.entries_with_calculated_cost = report
+            .totals
+            .entries_with_calculated_cost
+            .saturating_add(week.entries_with_calculated_cost);
+        report.totals.entries_with_missing_cost = report
+            .totals
+            .entries_with_missing_cost
+            .saturating_add(week.entries_with_missing_cost);
     }
 
     report
@@ -285,10 +411,194 @@ pub fn render_daily_report_table(
     lines.join("\n") + "\n"
 }
 
+#[must_use]
+pub fn render_weekly_report_json(
+    report: &WeeklyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"mode\": \"weekly\",\n");
+
+    if report.weeks.is_empty() {
+        out.push_str("  \"weeks\": [],\n");
+    } else {
+        out.push_str("  \"weeks\": [\n");
+        for (index, week) in report.weeks.iter().enumerate() {
+            out.push_str("    {\n");
+            out.push_str(&format!(
+                "      \"week_start\": \"{}\",\n",
+                json_escape(&week.week_start)
+            ));
+            out.push_str(&format!(
+                "      \"week_end\": \"{}\",\n",
+                json_escape(&week.week_end)
+            ));
+            out.push_str(&format!("      \"entries\": {},\n", week.entries));
+            out.push_str("      \"tokens\": {\n");
+            out.push_str(&format!("        \"input\": {},\n", week.input_tokens));
+            out.push_str(&format!("        \"output\": {},\n", week.output_tokens));
+            out.push_str(&format!(
+                "        \"cache_creation_input\": {},\n",
+                week.cache_creation_input_tokens
+            ));
+            out.push_str(&format!(
+                "        \"cache_read_input\": {},\n",
+                week.cache_read_input_tokens
+            ));
+            out.push_str(&format!("        \"total\": {}\n", week.total_tokens));
+            out.push_str("      },\n");
+            out.push_str("      \"cost\": {\n");
+            out.push_str(&format!(
+                "        \"usd\": {},\n",
+                json_number(week.total_cost_usd)
+            ));
+            out.push_str(&format!(
+                "        \"raw_entries\": {},\n",
+                week.entries_with_raw_cost
+            ));
+            out.push_str(&format!(
+                "        \"calculated_entries\": {},\n",
+                week.entries_with_calculated_cost
+            ));
+            out.push_str(&format!(
+                "        \"missing_entries\": {}\n",
+                week.entries_with_missing_cost
+            ));
+            out.push_str("      }\n");
+            out.push_str("    }");
+            if index + 1 != report.weeks.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("  ],\n");
+    }
+
+    out.push_str("  \"totals\": {\n");
+    out.push_str(&format!("    \"weeks\": {},\n", report.totals.weeks));
+    out.push_str(&format!("    \"entries\": {},\n", report.totals.entries));
+    out.push_str("    \"tokens\": {\n");
+    out.push_str(&format!(
+        "      \"input\": {},\n",
+        report.totals.input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"output\": {},\n",
+        report.totals.output_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_creation_input\": {},\n",
+        report.totals.cache_creation_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"cache_read_input\": {},\n",
+        report.totals.cache_read_input_tokens
+    ));
+    out.push_str(&format!(
+        "      \"total\": {}\n",
+        report.totals.total_tokens
+    ));
+    out.push_str("    },\n");
+    out.push_str("    \"cost\": {\n");
+    out.push_str(&format!(
+        "      \"usd\": {},\n",
+        json_number(report.totals.total_cost_usd)
+    ));
+    out.push_str(&format!(
+        "      \"raw_entries\": {},\n",
+        report.totals.entries_with_raw_cost
+    ));
+    out.push_str(&format!(
+        "      \"calculated_entries\": {},\n",
+        report.totals.entries_with_calculated_cost
+    ));
+    out.push_str(&format!(
+        "      \"missing_entries\": {}\n",
+        report.totals.entries_with_missing_cost
+    ));
+    out.push_str("    }\n");
+    out.push_str("  },\n");
+
+    out.push_str("  \"warnings\": {\n");
+    out.push_str(&format!(
+        "    \"discovery\": {},\n",
+        discovery_warning_count
+    ));
+    out.push_str(&format!("    \"parse\": {}\n", parse_warning_count));
+    out.push_str("  }\n");
+    out.push_str("}\n");
+
+    out
+}
+
+#[must_use]
+pub fn render_weekly_report_table(
+    report: &WeeklyReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(
+        "WEEK_START WEEK_END   ENTRIES INPUT OUTPUT CACHE_CREATE CACHE_READ TOTAL COST_USD"
+            .to_owned(),
+    );
+
+    for week in &report.weeks {
+        lines.push(format!(
+            "{} {} {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+            week.week_start,
+            week.week_end,
+            week.entries,
+            week.input_tokens,
+            week.output_tokens,
+            week.cache_creation_input_tokens,
+            week.cache_read_input_tokens,
+            week.total_tokens,
+            json_number(week.total_cost_usd)
+        ));
+    }
+
+    lines.push(format!(
+        "TOTAL                {:>7} {:>5} {:>6} {:>12} {:>10} {:>5} {:>8}",
+        report.totals.entries,
+        report.totals.input_tokens,
+        report.totals.output_tokens,
+        report.totals.cache_creation_input_tokens,
+        report.totals.cache_read_input_tokens,
+        report.totals.total_tokens,
+        json_number(report.totals.total_cost_usd)
+    ));
+    lines.push(format!(
+        "WARNINGS discovery={} parse={}",
+        discovery_warning_count, parse_warning_count
+    ));
+
+    lines.join("\n") + "\n"
+}
+
 fn utc_day_label_from_unix_ms(unix_ms: i64) -> String {
-    let days_since_epoch = unix_ms.div_euclid(86_400_000);
+    utc_day_label_from_days_since_epoch(unix_ms_to_days_since_epoch(unix_ms))
+}
+
+fn utc_day_label_from_days_since_epoch(days_since_epoch: i64) -> String {
     let (year, month, day) = civil_from_days(days_since_epoch);
     format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn unix_ms_to_days_since_epoch(unix_ms: i64) -> i64 {
+    unix_ms.div_euclid(86_400_000)
+}
+
+fn utc_week_start_days_from_unix_ms(unix_ms: i64) -> i64 {
+    let days_since_epoch = unix_ms_to_days_since_epoch(unix_ms);
+    let weekday_monday_based = (days_since_epoch + 3).rem_euclid(7);
+    days_since_epoch - weekday_monday_based
+}
+
+fn utc_week_end_days_from_week_start_days(week_start_days: i64) -> i64 {
+    week_start_days.saturating_add(6)
 }
 
 fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
@@ -418,6 +728,96 @@ mod tests {
         assert!(rendered.contains("\"mode\": \"daily\""));
         assert!(rendered.contains("\"date\": \"2026-03-10\""));
         assert!(rendered.contains("\"usd\": 0.123456"));
+        assert!(rendered.contains("\"parse\": 2"));
+    }
+
+    #[test]
+    fn builds_weekly_buckets_with_monday_start() {
+        let mut pricing = PricingCatalog::new();
+        pricing.insert(
+            "claude-sonnet",
+            ModelPricing::from_per_million(1.0, 1.0, 1.0, 1.0),
+        );
+
+        let events = vec![
+            test_event(
+                1_772_971_200_000,
+                Some("claude-sonnet"),
+                Some(0.2),
+                10,
+                0,
+                0,
+                0,
+            ),
+            test_event(
+                1_773_057_600_000,
+                Some("claude-sonnet"),
+                None,
+                1_000_000,
+                0,
+                0,
+                0,
+            ),
+            test_event(1_773_057_600_001, Some("unknown-model"), None, 3, 4, 0, 0),
+        ];
+
+        let report = build_weekly_report(&events, CostMode::Auto, &pricing);
+
+        assert_eq!(report.weeks.len(), 2);
+        assert_eq!(report.weeks[0].week_start, "2026-03-02");
+        assert_eq!(report.weeks[0].week_end, "2026-03-08");
+        assert_eq!(report.weeks[0].entries, 1);
+        assert_eq!(report.weeks[1].week_start, "2026-03-09");
+        assert_eq!(report.weeks[1].week_end, "2026-03-15");
+        assert_eq!(report.weeks[1].entries, 2);
+        assert_eq!(report.weeks[1].entries_with_calculated_cost, 1);
+        assert_eq!(report.weeks[1].entries_with_missing_cost, 1);
+        assert_eq!(report.totals.entries, 3);
+        assert_eq!(report.totals.weeks, 2);
+        assert_eq!(report.totals.entries_with_raw_cost, 1);
+        assert_eq!(report.totals.entries_with_calculated_cost, 1);
+        assert_eq!(report.totals.entries_with_missing_cost, 1);
+    }
+
+    #[test]
+    fn renders_weekly_json_shape_deterministically() {
+        let report = WeeklyReport {
+            weeks: vec![WeeklyReportWeek {
+                week_start: "2026-03-09".to_owned(),
+                week_end: "2026-03-15".to_owned(),
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            }],
+            totals: WeeklyReportTotals {
+                weeks: 1,
+                entries: 2,
+                input_tokens: 5,
+                output_tokens: 6,
+                cache_creation_input_tokens: 7,
+                cache_read_input_tokens: 8,
+                total_tokens: 26,
+                total_cost_usd: 0.123_456,
+                entries_with_raw_cost: 1,
+                entries_with_calculated_cost: 1,
+                entries_with_missing_cost: 0,
+            },
+        };
+
+        let rendered = render_weekly_report_json(&report, 1, 2);
+
+        assert!(rendered.contains("\"mode\": \"weekly\""));
+        assert!(rendered.contains("\"week_start\": \"2026-03-09\""));
+        assert!(rendered.contains("\"week_end\": \"2026-03-15\""));
+        assert!(rendered.contains("\"usd\": 0.123456"));
+        assert!(rendered.contains("\"discovery\": 1"));
         assert!(rendered.contains("\"parse\": 2"));
     }
 

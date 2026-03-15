@@ -5,7 +5,7 @@
 - [x] Implement robust JSONL event parsing and normalization into stable Rust domain models.
 - [x] Implement pricing and derived metric calculation consistent with documented upstream behavior.
 - [x] Implement `daily` report mode with deterministic JSON output and parity fixtures.
-- [ ] Implement `weekly` report mode with deterministic JSON output and parity fixtures.
+- [x] Implement `weekly` report mode with deterministic JSON output and parity fixtures.
 - [ ] Implement `monthly` report mode with deterministic JSON output and parity fixtures.
 - [ ] Implement `session` report mode with deterministic JSON output and parity fixtures.
 - [ ] Implement `blocks` report mode with deterministic JSON output and parity fixtures.

@@ -3,7 +3,10 @@ use cusage_rs::config::DataRootOptions;
 use cusage_rs::discovery::discover_session_files;
 use cusage_rs::parser::parse_jsonl_files;
 use cusage_rs::pricing::{CostMode, PricingCatalog};
-use cusage_rs::report::{build_daily_report, render_daily_report_json, render_daily_report_table};
+use cusage_rs::report::{
+    build_daily_report, build_weekly_report, render_daily_report_json, render_daily_report_table,
+    render_weekly_report_json, render_weekly_report_table,
+};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -22,6 +25,7 @@ struct Cli {
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 enum Command {
     Daily(ReportArgs),
+    Weekly(ReportArgs),
     Monthly(ReportArgs),
     Session(ReportArgs),
     Blocks(ReportArgs),
@@ -74,6 +78,7 @@ where
 fn describe_command(command: &Command) -> String {
     match command {
         Command::Daily(args) => render_daily_command(args),
+        Command::Weekly(args) => render_weekly_command(args),
         Command::Monthly(args) => render_report_placeholder("monthly", args),
         Command::Session(args) => render_report_placeholder("session", args),
         Command::Blocks(args) => render_report_placeholder("blocks", args),
@@ -98,6 +103,19 @@ fn render_daily_command(args: &ReportArgs) -> String {
         render_daily_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
     } else {
         render_daily_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
+    }
+}
+
+fn render_weekly_command(args: &ReportArgs) -> String {
+    let data_roots = DataRootOptions::from_environment().resolve_project_roots();
+    let discovered = discover_session_files(&data_roots);
+    let parsed = parse_jsonl_files(&discovered.files);
+    let report = build_weekly_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+
+    if args.json {
+        render_weekly_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+    } else {
+        render_weekly_report_table(&report, discovered.warnings.len(), parsed.warnings.len())
     }
 }
 
@@ -167,5 +185,15 @@ mod tests {
         assert!(output.contains("20250525"));
         assert!(output.contains("Requested JSON output contract."));
         assert!(output.contains("Project filter: demo"));
+    }
+
+    #[test]
+    fn parses_weekly_command() {
+        let cli = Cli::parse_from(["cusage-rs", "weekly", "--json"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        assert!(matches!(
+            command,
+            Command::Weekly(ReportArgs { json: true, .. })
+        ));
     }
 }
