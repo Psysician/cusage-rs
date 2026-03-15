@@ -1,0 +1,1 @@
+model=claude-sonnet session_usd=0.17 today_usd=0.05 block_usd=0.05 block_remaining=5h00m burn_usd_per_hour=0.00 input_tokens=155

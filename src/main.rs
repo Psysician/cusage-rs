@@ -5,9 +5,10 @@ use cusage_rs::parser::parse_jsonl_files;
 use cusage_rs::pricing::{CostMode, PricingCatalog};
 use cusage_rs::report::{
     build_blocks_report, build_daily_report, build_monthly_report, build_session_report,
-    build_weekly_report, render_blocks_report_json, render_blocks_report_table,
-    render_daily_report_json, render_daily_report_table, render_monthly_report_json,
-    render_monthly_report_table, render_session_report_json, render_session_report_table,
+    build_statusline_report, build_weekly_report, render_blocks_report_json,
+    render_blocks_report_table, render_daily_report_json, render_daily_report_table,
+    render_monthly_report_json, render_monthly_report_table, render_session_report_json,
+    render_session_report_table, render_statusline_report_json, render_statusline_report_line,
     render_weekly_report_json, render_weekly_report_table,
 };
 use std::ffi::OsString;
@@ -85,14 +86,7 @@ fn describe_command(command: &Command) -> String {
         Command::Monthly(args) => render_monthly_command(args),
         Command::Session(args) => render_session_command(args),
         Command::Blocks(args) => render_blocks_command(args),
-        Command::Statusline(args) => {
-            if args.json {
-                "{\"status\":\"bootstrap\",\"command\":\"statusline\"}".to_owned()
-            } else {
-                "cusage-rs bootstrap: statusline contract captured; renderer not implemented yet."
-                    .to_owned()
-            }
-        }
+        Command::Statusline(args) => render_statusline_command(args),
     }
 }
 
@@ -161,6 +155,19 @@ fn render_blocks_command(args: &ReportArgs) -> String {
     }
 }
 
+fn render_statusline_command(args: &StatuslineArgs) -> String {
+    let data_roots = DataRootOptions::from_environment().resolve_project_roots();
+    let discovered = discover_session_files(&data_roots);
+    let parsed = parse_jsonl_files(&discovered.files);
+    let report = build_statusline_report(&parsed.events, CostMode::Auto, &PricingCatalog::new());
+
+    if args.json {
+        render_statusline_report_json(&report, discovered.warnings.len(), parsed.warnings.len())
+    } else {
+        render_statusline_report_line(&report)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +216,16 @@ mod tests {
         assert!(matches!(
             command,
             Command::Blocks(ReportArgs { json: true, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_statusline_command() {
+        let cli = Cli::parse_from(["cusage-rs", "statusline", "--json"]);
+        let command = cli.command.expect("expected parsed subcommand");
+        assert!(matches!(
+            command,
+            Command::Statusline(StatuslineArgs { json: true })
         ));
     }
 }

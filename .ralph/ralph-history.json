@@ -303,9 +303,45 @@
         "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=1.164 salience=0.400 id=00d29d04-1e98-4878-b5ac-f0de9f07238c\\nCompleted Ralph iteration",
         "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs blocks report mode parity fixtures statusline pending tasks ralph loop\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n      "
       ]
+    },
+    {
+      "iteration": 10,
+      "startedAt": "2026-03-15T17:24:37.126Z",
+      "endedAt": "2026-03-15T17:32:29.349Z",
+      "durationMs": 472043,
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "toolsUsed": {
+        "0": 2,
+        "1": 1,
+        "2": 2,
+        "29": 1,
+        "codex-lb": 2,
+        "targeted": 1,
+        "tests": 2,
+        "unittests": 3
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/main.rs",
+        "src/report.rs",
+        "tests/fixtures/statusline/",
+        "tests/parity_statusline.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [semantic] score=1.695 salience=1.000 id=f3fd9c8f-4d0e-4048-822c-6a2d6f63552a\\nCompleted Ralph Iteration",
+        "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs statusline mode, report rendering, CLI parity, compact output behavior\\\",\\n  \\\"contextual\\\": [\\n    {\\n      \\\"source\\\": \\\"hsg\\\",\\n      ",
+        "error: unexpected argument 'report::tests::renders_statusline_as_single_compact_line' found",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 4211101,
+  "totalDurationMs": 4683144,
   "struggleIndicators": {
     "repeatedErrors": {
       "\"text\": \"Found 8 contextual memories and 867 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [pro": 1,
@@ -341,8 +377,8 @@
       "\"text\": \"Found 8 contextual memories and 883 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
       "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs weekly report mode parity fixtures de": 1,
       "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
-      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s": 1,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
       "\"text\": \"Found 5 contextual memories and 888 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
@@ -357,8 +393,12 @@
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s": 1,
       "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s": 1,
-      "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 1,
-      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs blocks report mode parity fixtures st": 1
+      "\"text\": \"Found 5 contextual memories and 894 temporal facts.\\n\\n=== Contextual Memories ===\\n1. [sem": 2,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs blocks report mode parity fixtures st": 1,
+      "\"text\": \"{\\n  \\\"type\\\": \\\"unified\\\",\\n  \\\"query\\\": \\\"cusage-rs statusline mode, report rendering, CL": 1,
+      "error: unexpected argument 'report::tests::renders_statusline_as_single_compact_line' found": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s": 1,
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

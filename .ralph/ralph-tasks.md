@@ -9,7 +9,7 @@
 - [x] Implement `monthly` report mode with deterministic JSON output and parity fixtures.
 - [x] Implement `session` report mode with deterministic JSON output and parity fixtures.
 - [x] Implement `blocks` report mode with deterministic JSON output and parity fixtures.
-- [ ] Implement `statusline` output mode and verify compact hook-oriented behavior.
+- [x] Implement `statusline` output mode and verify compact hook-oriented behavior.
 - [ ] Implement shared flags and filtering behavior: `--since`, `--until`, `--json`, `--breakdown`, `--compact`, `--instances`, `--project`, `--timezone`, `--locale`.
 - [ ] Implement documented config-file behavior, custom path support, and offline/custom-root behavior where part of the public contract.
 - [ ] Add golden and parity integration tests for representative command/flag combinations and malformed-input edge cases.

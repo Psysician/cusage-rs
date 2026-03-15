@@ -1,0 +1,22 @@
+{
+  "mode": "statusline",
+  "statusline": {
+    "model": "claude-sonnet",
+    "session_cost_usd": 0.17,
+    "today_cost_usd": 0.05,
+    "session_input_tokens": 155,
+    "active_block": {
+      "block_start": "2026-03-11T02:10:00Z",
+      "block_end": "2026-03-11T07:10:00Z",
+      "cost_usd": 0.05,
+      "elapsed_ms": 0,
+      "remaining_ms": 18000000,
+      "remaining": "5h00m",
+      "burn_rate_usd_per_hour": 0.0
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 0
+  }
+}

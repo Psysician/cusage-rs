@@ -1,0 +1,1 @@
+model=unknown session_usd=0.01 today_usd=0.01 block_usd=0.01 block_remaining=5h00m burn_usd_per_hour=0.00 input_tokens=10

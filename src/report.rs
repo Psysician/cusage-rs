@@ -191,10 +191,36 @@ pub struct BlocksReportTotals {
     pub entries_with_missing_cost: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StatuslineReport {
+    pub model: Option<String>,
+    pub session_cost_usd: f64,
+    pub today_cost_usd: f64,
+    pub session_input_tokens: u64,
+    pub active_block: Option<StatuslineReportBlock>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StatuslineReportBlock {
+    pub block_start: String,
+    pub block_end: String,
+    pub cost_usd: f64,
+    pub elapsed_ms: i64,
+    pub remaining_ms: i64,
+    pub burn_rate_usd_per_hour: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct SessionGroupKey {
     bucket: u8,
     value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StatuslineSessionMarker {
+    SessionId(String),
+    Project(String),
+    Fallback,
 }
 
 #[must_use]
@@ -672,6 +698,97 @@ pub fn build_blocks_report(
             .totals
             .entries_with_missing_cost
             .saturating_add(block.entries_with_missing_cost);
+    }
+
+    report
+}
+
+#[must_use]
+pub fn build_statusline_report(
+    events: &[UsageEvent],
+    cost_mode: CostMode,
+    pricing: &PricingCatalog,
+) -> StatuslineReport {
+    let mut sorted = events.iter().collect::<Vec<_>>();
+    sorted.sort_by(|left, right| {
+        left.occurred_at_unix_ms
+            .cmp(&right.occurred_at_unix_ms)
+            .then_with(|| left.origin.file.cmp(&right.origin.file))
+            .then_with(|| left.origin.line_number.cmp(&right.origin.line_number))
+    });
+
+    let Some(latest_event) = sorted.last().copied() else {
+        return StatuslineReport::default();
+    };
+
+    let marker = statusline_marker_from_event(latest_event);
+    let latest_day = utc_day_label_from_unix_ms(latest_event.occurred_at_unix_ms);
+
+    let mut report = StatuslineReport::default();
+    let mut latest_active_ms: Option<i64> = None;
+    let mut block_start_ms: Option<i64> = None;
+    let mut block_cost_usd = 0.0;
+
+    for event in &sorted {
+        let resolved = resolve_event_cost(event, cost_mode, pricing);
+        let event_day = utc_day_label_from_unix_ms(event.occurred_at_unix_ms);
+        if event_day == latest_day {
+            report.today_cost_usd += resolved.cost_usd;
+        }
+
+        if !event_matches_statusline_marker(event, &marker) {
+            continue;
+        }
+
+        report.session_cost_usd += resolved.cost_usd;
+        report.session_input_tokens = report
+            .session_input_tokens
+            .saturating_add(event.usage.input_tokens);
+        latest_active_ms = Some(event.occurred_at_unix_ms);
+        if let Some(model) = normalized_optional_string(event.model.as_deref()) {
+            report.model = Some(model);
+        }
+
+        let should_start_new = match block_start_ms {
+            Some(start_ms) => {
+                let end_ms = start_ms.saturating_add(DEFAULT_BLOCK_WINDOW_MS);
+                event.occurred_at_unix_ms >= end_ms
+            }
+            None => true,
+        };
+
+        if should_start_new {
+            block_start_ms = Some(event.occurred_at_unix_ms);
+            block_cost_usd = 0.0;
+        }
+        block_cost_usd += resolved.cost_usd;
+    }
+
+    if report.model.is_none() {
+        report.model = sorted
+            .iter()
+            .rev()
+            .find_map(|event| normalized_optional_string(event.model.as_deref()));
+    }
+
+    if let (Some(start_ms), Some(last_ms)) = (block_start_ms, latest_active_ms) {
+        let block_end_ms = start_ms.saturating_add(DEFAULT_BLOCK_WINDOW_MS);
+        let elapsed_ms = last_ms.saturating_sub(start_ms);
+        let remaining_ms = block_end_ms.saturating_sub(last_ms).max(0);
+        let burn_rate_usd_per_hour = if elapsed_ms <= 0 {
+            0.0
+        } else {
+            block_cost_usd * 3_600_000.0 / (elapsed_ms as f64)
+        };
+
+        report.active_block = Some(StatuslineReportBlock {
+            block_start: utc_timestamp_label_from_unix_ms(start_ms),
+            block_end: utc_timestamp_label_from_unix_ms(block_end_ms),
+            cost_usd: block_cost_usd,
+            elapsed_ms,
+            remaining_ms,
+            burn_rate_usd_per_hour,
+        });
     }
 
     report
@@ -1504,6 +1621,100 @@ pub fn render_blocks_report_table(
     lines.join("\n") + "\n"
 }
 
+#[must_use]
+pub fn render_statusline_report_json(
+    report: &StatuslineReport,
+    discovery_warning_count: usize,
+    parse_warning_count: usize,
+) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"mode\": \"statusline\",\n");
+    out.push_str("  \"statusline\": {\n");
+    out.push_str(&format!(
+        "    \"model\": {},\n",
+        json_optional_string(report.model.as_deref())
+    ));
+    out.push_str(&format!(
+        "    \"session_cost_usd\": {},\n",
+        json_number(report.session_cost_usd)
+    ));
+    out.push_str(&format!(
+        "    \"today_cost_usd\": {},\n",
+        json_number(report.today_cost_usd)
+    ));
+    out.push_str(&format!(
+        "    \"session_input_tokens\": {},\n",
+        report.session_input_tokens
+    ));
+    out.push_str("    \"active_block\": ");
+    if let Some(block) = &report.active_block {
+        out.push_str("{\n");
+        out.push_str(&format!(
+            "      \"block_start\": \"{}\",\n",
+            json_escape(&block.block_start)
+        ));
+        out.push_str(&format!(
+            "      \"block_end\": \"{}\",\n",
+            json_escape(&block.block_end)
+        ));
+        out.push_str(&format!(
+            "      \"cost_usd\": {},\n",
+            json_number(block.cost_usd)
+        ));
+        out.push_str(&format!("      \"elapsed_ms\": {},\n", block.elapsed_ms));
+        out.push_str(&format!(
+            "      \"remaining_ms\": {},\n",
+            block.remaining_ms
+        ));
+        out.push_str(&format!(
+            "      \"remaining\": \"{}\",\n",
+            json_escape(&compact_duration_from_ms(block.remaining_ms))
+        ));
+        out.push_str(&format!(
+            "      \"burn_rate_usd_per_hour\": {}\n",
+            json_number(block.burn_rate_usd_per_hour)
+        ));
+        out.push_str("    }\n");
+    } else {
+        out.push_str("null\n");
+    }
+    out.push_str("  },\n");
+    out.push_str("  \"warnings\": {\n");
+    out.push_str(&format!(
+        "    \"discovery\": {},\n",
+        discovery_warning_count
+    ));
+    out.push_str(&format!("    \"parse\": {}\n", parse_warning_count));
+    out.push_str("  }\n");
+    out.push_str("}\n");
+    out
+}
+
+#[must_use]
+pub fn render_statusline_report_line(report: &StatuslineReport) -> String {
+    let model = report.model.as_deref().unwrap_or("unknown");
+    let (block_usd, block_remaining, burn_usd_per_hour) = match &report.active_block {
+        Some(block) => (
+            format_money_fixed_2(block.cost_usd),
+            compact_duration_from_ms(block.remaining_ms),
+            format_money_fixed_2(block.burn_rate_usd_per_hour),
+        ),
+        None => (
+            format_money_fixed_2(0.0),
+            compact_duration_from_ms(0),
+            format_money_fixed_2(0.0),
+        ),
+    };
+
+    format!(
+        "model={model} session_usd={} today_usd={} block_usd={block_usd} block_remaining={block_remaining} burn_usd_per_hour={burn_usd_per_hour} input_tokens={}\n",
+        format_money_fixed_2(report.session_cost_usd),
+        format_money_fixed_2(report.today_cost_usd),
+        report.session_input_tokens
+    )
+}
+
 fn utc_day_label_from_unix_ms(unix_ms: i64) -> String {
     utc_day_label_from_days_since_epoch(unix_ms_to_days_since_epoch(unix_ms))
 }
@@ -1584,11 +1795,45 @@ fn session_group_key(event: &UsageEvent) -> SessionGroupKey {
     }
 }
 
+fn statusline_marker_from_event(event: &UsageEvent) -> StatuslineSessionMarker {
+    if let Some(session_id) = normalized_optional_string(event.session_id.as_deref()) {
+        return StatuslineSessionMarker::SessionId(session_id);
+    }
+    if let Some(project) = normalized_optional_string(event.project.as_deref()) {
+        return StatuslineSessionMarker::Project(project);
+    }
+    StatuslineSessionMarker::Fallback
+}
+
+fn event_matches_statusline_marker(event: &UsageEvent, marker: &StatuslineSessionMarker) -> bool {
+    match marker {
+        StatuslineSessionMarker::SessionId(expected) => {
+            normalized_optional_string(event.session_id.as_deref()).as_deref() == Some(expected)
+        }
+        StatuslineSessionMarker::Project(expected) => {
+            normalized_optional_string(event.project.as_deref()).as_deref() == Some(expected)
+        }
+        StatuslineSessionMarker::Fallback => true,
+    }
+}
+
 fn normalized_optional_string(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn compact_duration_from_ms(duration_ms: i64) -> String {
+    let total_minutes = duration_ms.max(0).div_euclid(60_000);
+    let hours = total_minutes.div_euclid(60);
+    let minutes = total_minutes.rem_euclid(60);
+    format!("{hours}h{minutes:02}m")
+}
+
+fn format_money_fixed_2(value: f64) -> String {
+    let normalized = if value.is_finite() { value } else { 0.0 };
+    format!("{normalized:.2}")
 }
 
 fn json_optional_string(value: Option<&str>) -> String {
@@ -2140,6 +2385,108 @@ mod tests {
         assert!(rendered.contains("\"usd\": 0.123456"));
         assert!(rendered.contains("\"discovery\": 1"));
         assert!(rendered.contains("\"parse\": 2"));
+    }
+
+    #[test]
+    fn builds_statusline_for_latest_session_marker() {
+        let events = vec![
+            test_event_with_identity(
+                1_773_136_800_000,
+                Some("session-a"),
+                Some("team-alpha"),
+                Some("claude-sonnet"),
+                Some(0.12),
+                100,
+                50,
+                0,
+                0,
+            ),
+            test_event_with_identity(
+                1_773_154_740_000,
+                Some("session-a"),
+                Some("team-alpha"),
+                None,
+                None,
+                25,
+                10,
+                5,
+                15,
+            ),
+            test_event_with_identity(
+                1_773_158_340_000,
+                Some("session-b"),
+                Some("team-beta"),
+                Some("unknown-model"),
+                Some(0.06),
+                40,
+                20,
+                0,
+                0,
+            ),
+            test_event_with_identity(
+                1_773_195_000_000,
+                Some("session-a"),
+                Some("team-alpha"),
+                None,
+                Some(0.05),
+                30,
+                10,
+                0,
+                0,
+            ),
+        ];
+
+        let report = build_statusline_report(&events, CostMode::Auto, &PricingCatalog::new());
+
+        assert_eq!(report.model.as_deref(), Some("claude-sonnet"));
+        assert!((report.session_cost_usd - 0.17).abs() < 0.000_000_001);
+        assert!((report.today_cost_usd - 0.05).abs() < 0.000_000_001);
+        assert_eq!(report.session_input_tokens, 155);
+
+        let block = report
+            .active_block
+            .as_ref()
+            .expect("expected active block for latest session");
+        assert_eq!(block.block_start, "2026-03-11T02:10:00Z");
+        assert_eq!(block.block_end, "2026-03-11T07:10:00Z");
+        assert!((block.cost_usd - 0.05).abs() < 0.000_000_001);
+        assert_eq!(block.elapsed_ms, 0);
+        assert_eq!(block.remaining_ms, 18_000_000);
+        assert!((block.burn_rate_usd_per_hour - 0.0).abs() < 0.000_000_001);
+    }
+
+    #[test]
+    fn renders_statusline_as_single_compact_line() {
+        let report = StatuslineReport {
+            model: Some("claude-sonnet".to_owned()),
+            session_cost_usd: 0.17,
+            today_cost_usd: 0.05,
+            session_input_tokens: 155,
+            active_block: Some(StatuslineReportBlock {
+                block_start: "2026-03-11T02:10:00Z".to_owned(),
+                block_end: "2026-03-11T07:10:00Z".to_owned(),
+                cost_usd: 0.05,
+                elapsed_ms: 0,
+                remaining_ms: 18_000_000,
+                burn_rate_usd_per_hour: 0.0,
+            }),
+        };
+
+        let rendered = render_statusline_report_line(&report);
+        let trimmed = rendered.trim_end_matches('\n');
+        assert!(!trimmed.contains('\n'));
+        assert_eq!(
+            trimmed,
+            "model=claude-sonnet session_usd=0.17 today_usd=0.05 block_usd=0.05 block_remaining=5h00m burn_usd_per_hour=0.00 input_tokens=155"
+        );
+
+        let as_json = render_statusline_report_json(&report, 1, 2);
+        assert!(as_json.contains("\"mode\": \"statusline\""));
+        assert!(as_json.contains("\"session_cost_usd\": 0.17"));
+        assert!(as_json.contains("\"today_cost_usd\": 0.05"));
+        assert!(as_json.contains("\"remaining\": \"5h00m\""));
+        assert!(as_json.contains("\"discovery\": 1"));
+        assert!(as_json.contains("\"parse\": 2"));
     }
 
     fn test_event(

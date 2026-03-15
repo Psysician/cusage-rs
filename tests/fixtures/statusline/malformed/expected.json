@@ -1,0 +1,22 @@
+{
+  "mode": "statusline",
+  "statusline": {
+    "model": null,
+    "session_cost_usd": 0.01,
+    "today_cost_usd": 0.01,
+    "session_input_tokens": 10,
+    "active_block": {
+      "block_start": "2026-03-12T01:00:00Z",
+      "block_end": "2026-03-12T06:00:00Z",
+      "cost_usd": 0.01,
+      "elapsed_ms": 0,
+      "remaining_ms": 18000000,
+      "remaining": "5h00m",
+      "burn_rate_usd_per_hour": 0.0
+    }
+  },
+  "warnings": {
+    "discovery": 0,
+    "parse": 3
+  }
+}
