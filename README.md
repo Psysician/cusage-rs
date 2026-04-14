@@ -4,6 +4,23 @@
 
 This repository is intentionally separate from Node-based forks. Upstream behavior and docs are the reference contract; upstream source code is not copied.
 
+## Installation
+
+```bash
+cargo install cusage-rs
+```
+
+Then run:
+
+```bash
+cusage-rs daily
+cusage-rs weekly
+cusage-rs monthly
+cusage-rs session
+cusage-rs blocks
+cusage-rs statusline
+```
+
 ## Status
 
 Core rewrite goals are implemented for the main report pipeline:

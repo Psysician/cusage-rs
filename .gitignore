@@ -2,4 +2,9 @@
 /.idea
 /.vscode
 *.log
+/.ralph
+/.claude
+.npmrc
+/.cargo
+/npm-dist
 
