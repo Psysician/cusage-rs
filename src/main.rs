@@ -30,7 +30,7 @@ const MILLIS_PER_DAY: i64 = 86_400_000;
 #[command(
     name = "cusage-rs",
     version,
-    about = "Rust rewrite scaffold for ccusage",
+    about = "Fast CLI to track Claude Code token usage and costs",
     disable_help_subcommand = true
 )]
 struct Cli {

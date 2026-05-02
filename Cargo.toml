@@ -1,8 +1,8 @@
 [package]
 name = "cusage-rs"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
-description = "Rust rewrite scaffold for ccusage"
+description = "Fast CLI to track Claude Code token usage and costs"
 license = "MIT"
 repository = "https://github.com/Psysician/cusage-rs"
 homepage = "https://github.com/Psysician/cusage-rs"
