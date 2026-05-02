@@ -1181,8 +1181,7 @@ fn colorize_report(text: &str) -> String {
 
     let mut out = String::with_capacity(text.len() + 512);
     let mut past_title = false;
-    let mut mid_border_count: u32 = 0;
-    let mut next_is_total = false;
+    let mut past_header = false;
 
     for line in text.lines() {
         if !past_title {
@@ -1198,24 +1197,21 @@ fn colorize_report(text: &str) -> String {
             out.push_str(line);
             out.push_str(RESET);
         } else if line.starts_with('├') {
-            mid_border_count += 1;
-            if mid_border_count >= 2 {
-                next_is_total = true;
-            }
+            past_header = true;
             out.push_str(DIM);
             out.push_str(line);
             out.push_str(RESET);
         } else if line.starts_with('│') {
-            if mid_border_count == 0 {
+            let is_total = line.contains("Total");
+            if !past_header {
                 out.push_str(BOLD);
                 out.push_str(line);
                 out.push_str(RESET);
-            } else if next_is_total {
+            } else if is_total {
                 out.push_str(BOLD);
                 out.push_str(CYAN);
                 out.push_str(line);
                 out.push_str(RESET);
-                next_is_total = false;
             } else {
                 out.push_str(line);
             }

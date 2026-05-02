@@ -1152,7 +1152,7 @@ fn format_money_human(value: f64) -> String {
 fn table_border(widths: &[usize], left: char, join: char, right: char) -> String {
     let mut border = String::from(left);
     for width in widths {
-        border.push_str(&"─".repeat(width.saturating_add(2)));
+        border.push_str(&"─".repeat(width.saturating_add(4)));
         border.push(join);
     }
     border.pop();
@@ -1179,9 +1179,9 @@ fn render_table_rows(cells: &[String], widths: &[usize], aligns: &[TableAlign]) 
         let mut row = String::from("│");
         for ((cell, width), align) in cell_lines.iter().zip(widths).zip(aligns) {
             let value = cell.get(line_index).map(String::as_str).unwrap_or("");
-            row.push(' ');
+            row.push_str("  ");
             row.push_str(&format_table_cell(value, *width, *align));
-            row.push(' ');
+            row.push_str("  ");
             row.push('│');
         }
         rendered_rows.push(row);
@@ -1255,14 +1255,18 @@ fn render_human_report_table(
     ));
     lines.push(mid_border.clone());
 
-    for row in rows {
+    for (index, row) in rows.iter().enumerate() {
         lines.extend(render_table_rows(row, &widths, &row_alignments));
+        if index + 1 < rows.len() {
+            lines.push(mid_border.clone());
+        }
     }
 
     lines.push(mid_border);
     lines.extend(render_table_rows(total_row, &widths, &row_alignments));
     lines.push(bottom_border);
     if warnings.discovery > 0 || warnings.parse > 0 {
+        lines.push(String::new());
         lines.push(format!(
             "Warnings: discovery={} parse={}",
             warnings.discovery, warnings.parse
