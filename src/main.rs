@@ -19,6 +19,7 @@ use cusage_rs::runtime_config::{
 };
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -202,7 +203,13 @@ where
         }
     };
 
-    print!("{output}");
+    let use_color =
+        std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    if use_color {
+        print!("{}", colorize_report(&output));
+    } else {
+        print!("{output}");
+    }
     ExitCode::SUCCESS
 }
 
@@ -403,8 +410,14 @@ fn resolve_report_args_with_context(
         .or(layer.offline)
         .unwrap_or(false);
 
+    let default_since = if command == "daily" {
+        Some(default_since_days_ago(14))
+    } else {
+        None
+    };
+
     Ok(ResolvedReportArgs {
-        since: args.since.clone().or(layer.since),
+        since: args.since.clone().or(layer.since).or(default_since),
         until: args.until.clone().or(layer.until),
         json: args.json || layer.json.unwrap_or(false),
         breakdown: args.breakdown || layer.breakdown.unwrap_or(false),
@@ -1126,10 +1139,12 @@ fn finish_custom_table(
     if let Some(instance_count) = instance_count {
         lines.push(format!("INSTANCES distinct={instance_count}"));
     }
-    lines.push(format!(
-        "WARNINGS discovery={} parse={}",
-        discovery_warning_count, parse_warning_count
-    ));
+    if discovery_warning_count > 0 || parse_warning_count > 0 {
+        lines.push(format!(
+            "WARNINGS discovery={} parse={}",
+            discovery_warning_count, parse_warning_count
+        ));
+    }
     lines.join("\n") + "\n"
 }
 
@@ -1151,6 +1166,74 @@ fn distinct_instance_count(events: &[UsageEvent]) -> usize {
         instances.insert(key);
     }
     instances.len()
+}
+
+fn colorize_report(text: &str) -> String {
+    if !text.starts_with('╭') {
+        return text.to_owned();
+    }
+
+    const BOLD: &str = "\x1b[1m";
+    const CYAN: &str = "\x1b[36m";
+    const DIM: &str = "\x1b[2m";
+    const YELLOW: &str = "\x1b[33m";
+    const RESET: &str = "\x1b[0m";
+
+    let mut out = String::with_capacity(text.len() + 512);
+    let mut past_title = false;
+    let mut mid_border_count: u32 = 0;
+    let mut next_is_total = false;
+
+    for line in text.lines() {
+        if !past_title {
+            if line.starts_with('╰') {
+                past_title = true;
+            }
+            out.push_str(BOLD);
+            out.push_str(CYAN);
+            out.push_str(line);
+            out.push_str(RESET);
+        } else if line.starts_with('┌') || line.starts_with('└') {
+            out.push_str(DIM);
+            out.push_str(line);
+            out.push_str(RESET);
+        } else if line.starts_with('├') {
+            mid_border_count += 1;
+            if mid_border_count >= 2 {
+                next_is_total = true;
+            }
+            out.push_str(DIM);
+            out.push_str(line);
+            out.push_str(RESET);
+        } else if line.starts_with('│') {
+            if mid_border_count == 0 {
+                out.push_str(BOLD);
+                out.push_str(line);
+                out.push_str(RESET);
+            } else if next_is_total {
+                out.push_str(BOLD);
+                out.push_str(CYAN);
+                out.push_str(line);
+                out.push_str(RESET);
+                next_is_total = false;
+            } else {
+                out.push_str(line);
+            }
+        } else if line.starts_with("Warnings:") {
+            out.push_str(YELLOW);
+            out.push_str(line);
+            out.push_str(RESET);
+        } else if !line.is_empty() {
+            out.push_str(BOLD);
+            out.push_str(line);
+            out.push_str(RESET);
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+
+    out
 }
 
 fn format_money_for_table(value: f64, decimal_comma: bool) -> String {
@@ -1288,6 +1371,16 @@ fn normalized_optional_string(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn default_since_days_ago(days_back: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let target_secs = now.as_secs().saturating_sub(days_back * 86_400);
+    let days_since_epoch = (target_secs / 86_400) as i64;
+    let (year, month, day) = cusage_rs::report::civil_from_days(days_since_epoch);
+    format!("{year:04}{month:02}{day:02}")
 }
 
 fn parse_cli_day(raw: &str) -> Result<ParsedDay, String> {

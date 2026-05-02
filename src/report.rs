@@ -1126,10 +1126,6 @@ struct BreakdownSummaryRow<'a> {
     model_breakdowns: &'a [ModelBreakdown],
 }
 
-fn cost_provenance_triplet(raw: usize, calculated: usize, missing: usize) -> String {
-    format!("{raw}/{calculated}/{missing}")
-}
-
 fn format_count_u64(value: u64) -> String {
     format_count_str(&value.to_string())
 }
@@ -1266,10 +1262,12 @@ fn render_human_report_table(
     lines.push(mid_border);
     lines.extend(render_table_rows(total_row, &widths, &row_alignments));
     lines.push(bottom_border);
-    lines.push(format!(
-        "Warnings: discovery={} parse={}",
-        warnings.discovery, warnings.parse
-    ));
+    if warnings.discovery > 0 || warnings.parse > 0 {
+        lines.push(format!(
+            "Warnings: discovery={} parse={}",
+            warnings.discovery, warnings.parse
+        ));
+    }
     lines.join("\n") + "\n"
 }
 
@@ -1373,7 +1371,6 @@ pub fn render_daily_report_table(
         ("Cache Read", TableAlign::Right),
         ("Tokens", TableAlign::Right),
         ("Cost USD", TableAlign::Right),
-        ("R/C/M", TableAlign::Right),
     ];
 
     let rows = report
@@ -1389,11 +1386,6 @@ pub fn render_daily_report_table(
                 format_count_u64(day.cache_read_input_tokens),
                 format_count_u64(day.total_tokens),
                 format_money_human(day.total_cost_usd),
-                cost_provenance_triplet(
-                    day.entries_with_raw_cost,
-                    day.entries_with_calculated_cost,
-                    day.entries_with_missing_cost,
-                ),
             ]
         })
         .collect::<Vec<_>>();
@@ -1407,11 +1399,6 @@ pub fn render_daily_report_table(
         format_count_u64(report.totals.cache_read_input_tokens),
         format_count_u64(report.totals.total_tokens),
         format_money_human(report.totals.total_cost_usd),
-        cost_provenance_triplet(
-            report.totals.entries_with_raw_cost,
-            report.totals.entries_with_calculated_cost,
-            report.totals.entries_with_missing_cost,
-        ),
     ];
 
     render_human_report_table(
@@ -1423,14 +1410,7 @@ pub fn render_daily_report_table(
             format_count_u64(report.totals.total_tokens),
             format_money_human(report.totals.total_cost_usd)
         ),
-        &format!(
-            "Cost provenance (raw/calculated/missing entries): {}",
-            cost_provenance_triplet(
-                report.totals.entries_with_raw_cost,
-                report.totals.entries_with_calculated_cost,
-                report.totals.entries_with_missing_cost,
-            )
-        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -1640,7 +1620,6 @@ pub fn render_weekly_report_table(
         ("Cache Read", TableAlign::Right),
         ("Tokens", TableAlign::Right),
         ("Cost USD", TableAlign::Right),
-        ("R/C/M", TableAlign::Right),
     ];
 
     let rows = report
@@ -1656,11 +1635,6 @@ pub fn render_weekly_report_table(
                 format_count_u64(week.cache_read_input_tokens),
                 format_count_u64(week.total_tokens),
                 format_money_human(week.total_cost_usd),
-                cost_provenance_triplet(
-                    week.entries_with_raw_cost,
-                    week.entries_with_calculated_cost,
-                    week.entries_with_missing_cost,
-                ),
             ]
         })
         .collect::<Vec<_>>();
@@ -1674,11 +1648,6 @@ pub fn render_weekly_report_table(
         format_count_u64(report.totals.cache_read_input_tokens),
         format_count_u64(report.totals.total_tokens),
         format_money_human(report.totals.total_cost_usd),
-        cost_provenance_triplet(
-            report.totals.entries_with_raw_cost,
-            report.totals.entries_with_calculated_cost,
-            report.totals.entries_with_missing_cost,
-        ),
     ];
 
     render_human_report_table(
@@ -1690,14 +1659,7 @@ pub fn render_weekly_report_table(
             format_count_u64(report.totals.total_tokens),
             format_money_human(report.totals.total_cost_usd)
         ),
-        &format!(
-            "Cost provenance (raw/calculated/missing entries): {}",
-            cost_provenance_triplet(
-                report.totals.entries_with_raw_cost,
-                report.totals.entries_with_calculated_cost,
-                report.totals.entries_with_missing_cost,
-            )
-        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -1903,7 +1865,6 @@ pub fn render_monthly_report_table(
         ("Cache Read", TableAlign::Right),
         ("Tokens", TableAlign::Right),
         ("Cost USD", TableAlign::Right),
-        ("R/C/M", TableAlign::Right),
     ];
 
     let rows = report
@@ -1919,11 +1880,6 @@ pub fn render_monthly_report_table(
                 format_count_u64(month.cache_read_input_tokens),
                 format_count_u64(month.total_tokens),
                 format_money_human(month.total_cost_usd),
-                cost_provenance_triplet(
-                    month.entries_with_raw_cost,
-                    month.entries_with_calculated_cost,
-                    month.entries_with_missing_cost,
-                ),
             ]
         })
         .collect::<Vec<_>>();
@@ -1937,11 +1893,6 @@ pub fn render_monthly_report_table(
         format_count_u64(report.totals.cache_read_input_tokens),
         format_count_u64(report.totals.total_tokens),
         format_money_human(report.totals.total_cost_usd),
-        cost_provenance_triplet(
-            report.totals.entries_with_raw_cost,
-            report.totals.entries_with_calculated_cost,
-            report.totals.entries_with_missing_cost,
-        ),
     ];
 
     render_human_report_table(
@@ -1953,14 +1904,7 @@ pub fn render_monthly_report_table(
             format_count_u64(report.totals.total_tokens),
             format_money_human(report.totals.total_cost_usd)
         ),
-        &format!(
-            "Cost provenance (raw/calculated/missing entries): {}",
-            cost_provenance_triplet(
-                report.totals.entries_with_raw_cost,
-                report.totals.entries_with_calculated_cost,
-                report.totals.entries_with_missing_cost,
-            )
-        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -2171,7 +2115,6 @@ pub fn render_session_report_table(
         ("Cache Read", TableAlign::Right),
         ("Tokens", TableAlign::Right),
         ("Cost USD", TableAlign::Right),
-        ("R/C/M", TableAlign::Right),
     ];
 
     let rows = report
@@ -2188,11 +2131,6 @@ pub fn render_session_report_table(
                 format_count_u64(session.cache_read_input_tokens),
                 format_count_u64(session.total_tokens),
                 format_money_human(session.total_cost_usd),
-                cost_provenance_triplet(
-                    session.entries_with_raw_cost,
-                    session.entries_with_calculated_cost,
-                    session.entries_with_missing_cost,
-                ),
             ]
         })
         .collect::<Vec<_>>();
@@ -2207,11 +2145,6 @@ pub fn render_session_report_table(
         format_count_u64(report.totals.cache_read_input_tokens),
         format_count_u64(report.totals.total_tokens),
         format_money_human(report.totals.total_cost_usd),
-        cost_provenance_triplet(
-            report.totals.entries_with_raw_cost,
-            report.totals.entries_with_calculated_cost,
-            report.totals.entries_with_missing_cost,
-        ),
     ];
 
     render_human_report_table(
@@ -2223,14 +2156,7 @@ pub fn render_session_report_table(
             format_count_u64(report.totals.total_tokens),
             format_money_human(report.totals.total_cost_usd)
         ),
-        &format!(
-            "Cost provenance (raw/calculated/missing entries): {}",
-            cost_provenance_triplet(
-                report.totals.entries_with_raw_cost,
-                report.totals.entries_with_calculated_cost,
-                report.totals.entries_with_missing_cost,
-            )
-        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -2456,7 +2382,6 @@ pub fn render_blocks_report_table(
         ("Cache Read", TableAlign::Right),
         ("Tokens", TableAlign::Right),
         ("Cost USD", TableAlign::Right),
-        ("R/C/M", TableAlign::Right),
     ];
 
     let rows = report
@@ -2474,11 +2399,6 @@ pub fn render_blocks_report_table(
                 format_count_u64(block.cache_read_input_tokens),
                 format_count_u64(block.total_tokens),
                 format_money_human(block.total_cost_usd),
-                cost_provenance_triplet(
-                    block.entries_with_raw_cost,
-                    block.entries_with_calculated_cost,
-                    block.entries_with_missing_cost,
-                ),
             ]
         })
         .collect::<Vec<_>>();
@@ -2494,11 +2414,6 @@ pub fn render_blocks_report_table(
         format_count_u64(report.totals.cache_read_input_tokens),
         format_count_u64(report.totals.total_tokens),
         format_money_human(report.totals.total_cost_usd),
-        cost_provenance_triplet(
-            report.totals.entries_with_raw_cost,
-            report.totals.entries_with_calculated_cost,
-            report.totals.entries_with_missing_cost,
-        ),
     ];
 
     render_human_report_table(
@@ -2510,14 +2425,7 @@ pub fn render_blocks_report_table(
             format_count_u64(report.totals.total_tokens),
             format_money_human(report.totals.total_cost_usd)
         ),
-        &format!(
-            "Cost provenance (raw/calculated/missing entries): {}",
-            cost_provenance_triplet(
-                report.totals.entries_with_raw_cost,
-                report.totals.entries_with_calculated_cost,
-                report.totals.entries_with_missing_cost,
-            )
-        ),
+        "",
         &columns,
         &rows,
         &total_row,
@@ -2731,7 +2639,7 @@ fn utc_month_label_from_month_key(month_key: i64) -> String {
     format!("{year:04}-{month:02}")
 }
 
-fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
+pub fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let z = days_since_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;

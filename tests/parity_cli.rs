@@ -108,11 +108,11 @@ fn daily_breakdown_matches_fixture() {
     let claude_config_dir = fixture_root().join("oracle/daily/claude-config");
 
     let first = run_cli(
-        &["daily", "--timezone", "UTC", "--breakdown"],
+        &["daily", "--timezone", "UTC", "--breakdown", "--since", "20000101"],
         &claude_config_dir,
     );
     let second = run_cli(
-        &["daily", "--timezone", "UTC", "--breakdown"],
+        &["daily", "--timezone", "UTC", "--breakdown", "--since", "20000101"],
         &claude_config_dir,
     );
 
@@ -144,8 +144,13 @@ fn human_readable_modes_match_layout_fixtures() {
 
     for (mode, fixture_path) in cases {
         let expected = read_fixture(fixture_path);
-        let first = run_cli(&[mode], &claude_config_dir);
-        let second = run_cli(&[mode], &claude_config_dir);
+        let args: Vec<&str> = if mode == "daily" {
+            vec![mode, "--since", "20000101"]
+        } else {
+            vec![mode]
+        };
+        let first = run_cli(&args, &claude_config_dir);
+        let second = run_cli(&args, &claude_config_dir);
 
         assert_success(&first, &format!("{mode} human-readable fixture"));
         assert_success(&second, &format!("{mode} human-readable fixture repeat"));
@@ -170,8 +175,8 @@ fn daily_json_calculates_non_zero_cost_for_known_model_without_raw_cost_field() 
     let expected = read_fixture("cli/daily_calculated_cost/expected.json");
     let claude_config_dir = fixture_root().join("cli/daily_calculated_cost/claude-config");
 
-    let first = run_cli(&["daily", "--json"], &claude_config_dir);
-    let second = run_cli(&["daily", "--json"], &claude_config_dir);
+    let first = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
+    let second = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
 
     assert_success(
         &first,
@@ -213,8 +218,8 @@ fn malformed_jsonl_is_tolerated_with_deterministic_warning_counts() {
     let expected = read_fixture("daily/malformed/expected.json");
     let claude_config_dir = fixture_root().join("daily/malformed/claude-config");
 
-    let first = run_cli(&["daily", "--json"], &claude_config_dir);
-    let second = run_cli(&["daily", "--json"], &claude_config_dir);
+    let first = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
+    let second = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
 
     assert_success(&first, "daily json malformed fixture");
     assert_success(&second, "daily json malformed fixture repeat");
