@@ -530,13 +530,8 @@ fn is_model_char(ch: char) -> bool {
 
 fn openai_pricing_from_cells(cells: &[Option<f64>]) -> Option<ModelPricing> {
     let input = cells.first().copied().flatten()?;
-    let output_index = if cells.get(1).is_some_and(Option::is_none) {
-        2
-    } else {
-        2
-    };
     let cached = cells.get(1).copied().flatten();
-    let output = cells.get(output_index).copied().flatten()?;
+    let output = cells.get(2).copied().flatten()?;
     Some(openai_model_pricing(input, cached, output))
 }
 
