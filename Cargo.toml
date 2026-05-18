@@ -2,13 +2,13 @@
 name = "cusage-rs"
 version = "1.0.0"
 edition = "2024"
-description = "Fast CLI to track Claude Code token usage and costs"
+description = "Fast CLI to track Claude/OpenAI token usage and costs"
 license = "MIT"
 repository = "https://github.com/Psysician/cusage-rs"
 homepage = "https://github.com/Psysician/cusage-rs"
 readme = "README.md"
 rust-version = "1.93"
-keywords = ["claude-code", "usage", "tokens", "cost", "cli"]
+keywords = ["claude-code", "openai", "usage", "tokens", "cost"]
 categories = ["command-line-utilities"]
 
 [dependencies]

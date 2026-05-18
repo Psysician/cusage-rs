@@ -30,7 +30,7 @@ const MILLIS_PER_DAY: i64 = 86_400_000;
 #[command(
     name = "cusage-rs",
     version,
-    about = "Fast CLI to track Claude Code token usage and costs",
+    about = "Fast CLI to track Claude/OpenAI token usage and costs",
     disable_help_subcommand = true
 )]
 struct Cli {
@@ -203,8 +203,7 @@ where
         }
     };
 
-    let use_color =
-        std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    let use_color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
     if use_color {
         print!("{}", colorize_report(&output));
     } else {
@@ -275,7 +274,7 @@ fn prepare_events(args: &ResolvedReportArgs) -> Result<PreparedEvents, String> {
 fn render_daily_command(args: &ReportArgs) -> Result<String, String> {
     let args = resolve_report_args("daily", args)?;
     let prepared = prepare_events(&args)?;
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_daily_report(&prepared.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -292,7 +291,7 @@ fn render_daily_command(args: &ReportArgs) -> Result<String, String> {
 fn render_weekly_command(args: &ReportArgs) -> Result<String, String> {
     let args = resolve_report_args("weekly", args)?;
     let prepared = prepare_events(&args)?;
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_weekly_report(&prepared.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -309,7 +308,7 @@ fn render_weekly_command(args: &ReportArgs) -> Result<String, String> {
 fn render_monthly_command(args: &ReportArgs) -> Result<String, String> {
     let args = resolve_report_args("monthly", args)?;
     let prepared = prepare_events(&args)?;
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_monthly_report(&prepared.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -326,7 +325,7 @@ fn render_monthly_command(args: &ReportArgs) -> Result<String, String> {
 fn render_session_command(args: &ReportArgs) -> Result<String, String> {
     let args = resolve_report_args("session", args)?;
     let prepared = prepare_events(&args)?;
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_session_report(&prepared.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -343,7 +342,7 @@ fn render_session_command(args: &ReportArgs) -> Result<String, String> {
 fn render_blocks_command(args: &ReportArgs) -> Result<String, String> {
     let args = resolve_report_args("blocks", args)?;
     let prepared = prepare_events(&args)?;
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_blocks_report(&prepared.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -362,7 +361,7 @@ fn render_statusline_command(args: &StatuslineArgs) -> Result<String, String> {
     let data_roots = DataRootOptions::from_environment().resolve_project_roots();
     let discovered = discover_session_files(&data_roots);
     let parsed = parse_jsonl_files(&discovered.files);
-    let pricing = PricingCatalog::default_claude_catalog();
+    let pricing = pricing_catalog(args.offline);
     let report = build_statusline_report(&parsed.events, CostMode::Auto, &pricing);
 
     if args.json {
@@ -374,6 +373,10 @@ fn render_statusline_command(args: &StatuslineArgs) -> Result<String, String> {
     } else {
         Ok(render_statusline_report_line(&report))
     }
+}
+
+fn pricing_catalog(offline: bool) -> PricingCatalog {
+    PricingCatalog::default_catalog_with_live_openai(!offline)
 }
 
 fn resolve_report_args(command: &str, args: &ReportArgs) -> Result<ResolvedReportArgs, String> {

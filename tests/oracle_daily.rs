@@ -22,7 +22,15 @@ fn daily_json_matches_real_ccusage_totals_for_modern_assistant_usage_fixture() {
     );
     let local = run_command(
         Path::new(env!("CARGO_BIN_EXE_cusage-rs")),
-        &["daily", "--json", "--timezone", "UTC", "--since", "20000101"],
+        &[
+            "daily",
+            "--offline",
+            "--json",
+            "--timezone",
+            "UTC",
+            "--since",
+            "20000101",
+        ],
         &fixture_root,
     );
 

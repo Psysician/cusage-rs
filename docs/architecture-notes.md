@@ -2,8 +2,9 @@
 
 ## Runtime pipeline (implemented)
 
-1. Discover Claude session files under the configured data root.
-   - Root resolution uses explicit defaults plus `CLAUDE_CONFIG_DIR` overrides.
+1. Discover Claude/OpenAI session files under the configured data root.
+   - Root resolution uses explicit Claude defaults plus `CLAUDE_CONFIG_DIR` overrides.
+   - OpenAI/Codex JSONL roots can be added with `OPENAI_USAGE_DIR`, `OPENAI_CONFIG_DIR`, or `CODEX_HOME`.
    - Discovery is defensive: unreadable/missing paths are surfaced as warnings, not fatal errors.
 2. Parse JSONL events into a stable internal usage model.
    - Parser accepts multiple key-shape variants for timestamps, ids, project/model metadata, token usage, and raw cost fields.
@@ -11,7 +12,8 @@
 3. Aggregate by report mode: day, month, session, or billing block.
    - Weekly and statusline modes are also implemented.
 4. Resolve pricing and derived metrics.
-   - Every CLI/report path uses `PricingCatalog::default_claude_catalog()` (Claude aliases and common provider-prefixed forms).
+   - Every CLI/report path uses `PricingCatalog::default_catalog_with_live_openai()` (Claude/OpenAI aliases and common provider-prefixed forms).
+   - Online runs attempt to refresh OpenAI prices from the official OpenAI pricing page; `--offline` uses compiled fallback prices.
    - Cost source attribution is preserved (`raw`, `calculated`, `missing`) and rolled into per-row and totals metrics.
    - `CostMode::Auto` is the active runtime behavior: raw cost first, calculated cost for known models when raw is absent, missing when unresolved.
 5. Render either table output or JSON output.
@@ -23,12 +25,12 @@
 ## Module boundaries (implemented)
 
 - `main` (binary): CLI command surface, filter application, and top-level orchestration
-- `config`: data-root resolution helpers (`HOME`/`CLAUDE_CONFIG_DIR` and default Claude roots)
+- `config`: data-root resolution helpers (`HOME`/`CLAUDE_CONFIG_DIR`, OpenAI/Codex root env vars, and default Claude roots)
 - `runtime_config`: config-file parsing/merging and precedence layers
 - `discovery`: file-system traversal and input selection
 - `parser`: JSONL event decoding and normalization
 - `domain`: token/cost models and report records
-- `pricing`: cost-mode resolution, Claude-focused default catalog + alias normalization, model lookup, and derived metric math
+- `pricing`: cost-mode resolution, Claude/OpenAI default catalogs, live OpenAI pricing refresh, alias normalization, model lookup, and derived metric math
 - `report`: aggregation and rendering for all report modes, including shared default human table layout and statusline formatter
 
 Aggregation and rendering live in `src/report.rs`; CLI orchestration and shared filtering live in `src/main.rs`.
@@ -44,7 +46,7 @@ Aggregation and rendering live in `src/report.rs`; CLI orchestration and shared 
 ## Explicit residual deltas
 
 - Not all upstream public flags are implemented yet (`--mode`, `--debug`, `--debug-samples`, `--jq`, and multiple mode-specific options).
-- Pricing defaults are static and Claude-focused; non-catalog model ids without raw event cost remain unresolved (`missing`) until catalog coverage is extended.
+- Non-catalog model ids without raw event cost remain unresolved (`missing`) until catalog coverage is extended.
 - No CLI/config hook currently exists for user-supplied pricing catalogs; runtime pricing mode is fixed to `CostMode::Auto` until `--mode` parity lands.
 - Timezone handling is fixed-offset based; IANA zone names are not currently accepted.
 - Offline mode is precedence-aware in config resolution but currently operationally neutral in the report runtime path.

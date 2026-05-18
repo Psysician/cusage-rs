@@ -108,11 +108,25 @@ fn daily_breakdown_matches_fixture() {
     let claude_config_dir = fixture_root().join("oracle/daily/claude-config");
 
     let first = run_cli(
-        &["daily", "--timezone", "UTC", "--breakdown", "--since", "20000101"],
+        &[
+            "daily",
+            "--timezone",
+            "UTC",
+            "--breakdown",
+            "--since",
+            "20000101",
+        ],
         &claude_config_dir,
     );
     let second = run_cli(
-        &["daily", "--timezone", "UTC", "--breakdown", "--since", "20000101"],
+        &[
+            "daily",
+            "--timezone",
+            "UTC",
+            "--breakdown",
+            "--since",
+            "20000101",
+        ],
         &claude_config_dir,
     );
 
@@ -175,8 +189,14 @@ fn daily_json_calculates_non_zero_cost_for_known_model_without_raw_cost_field() 
     let expected = read_fixture("cli/daily_calculated_cost/expected.json");
     let claude_config_dir = fixture_root().join("cli/daily_calculated_cost/claude-config");
 
-    let first = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
-    let second = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
+    let first = run_cli(
+        &["daily", "--json", "--since", "20000101"],
+        &claude_config_dir,
+    );
+    let second = run_cli(
+        &["daily", "--json", "--since", "20000101"],
+        &claude_config_dir,
+    );
 
     assert_success(
         &first,
@@ -214,12 +234,46 @@ fn daily_json_calculates_non_zero_cost_for_known_model_without_raw_cost_field() 
 }
 
 #[test]
+fn daily_json_calculates_openai_cost_and_cached_token_discount() {
+    let expected = read_fixture("cli/openai_calculated_cost/expected.json");
+    let claude_config_dir = fixture_root().join("cli/openai_calculated_cost/claude-config");
+
+    let output = run_cli(
+        &["daily", "--json", "--since", "20000101", "--offline"],
+        &claude_config_dir,
+    );
+
+    assert_success(
+        &output,
+        "daily json OpenAI calculated-cost fixture should succeed",
+    );
+
+    let expected = normalize_line_end(expected);
+    let stdout = normalize_line_end(stdout_text(&output));
+    assert_eq!(stdout, expected, "daily json OpenAI output mismatch");
+    assert!(
+        stdout.contains("\"usd\": 0.01955"),
+        "expected OpenAI calculated usd with cached-token discount"
+    );
+    assert!(
+        stdout.contains("\"cache_read_input\": 100"),
+        "expected OpenAI cached tokens to map to cache-read input"
+    );
+}
+
+#[test]
 fn malformed_jsonl_is_tolerated_with_deterministic_warning_counts() {
     let expected = read_fixture("daily/malformed/expected.json");
     let claude_config_dir = fixture_root().join("daily/malformed/claude-config");
 
-    let first = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
-    let second = run_cli(&["daily", "--json", "--since", "20000101"], &claude_config_dir);
+    let first = run_cli(
+        &["daily", "--json", "--since", "20000101"],
+        &claude_config_dir,
+    );
+    let second = run_cli(
+        &["daily", "--json", "--since", "20000101"],
+        &claude_config_dir,
+    );
 
     assert_success(&first, "daily json malformed fixture");
     assert_success(&second, "daily json malformed fixture repeat");
@@ -307,7 +361,7 @@ fn run_cli(args: &[&str], claude_config_dir: &Path) -> Output {
         .env("HOME", &home_dir)
         .env("USERPROFILE", &home_dir)
         .env("XDG_CONFIG_HOME", home_dir.join(".config"))
-        .env_remove("CCUSAGE_OFFLINE")
+        .env("CCUSAGE_OFFLINE", "1")
         .output()
         .expect("failed to execute cusage-rs CLI")
 }

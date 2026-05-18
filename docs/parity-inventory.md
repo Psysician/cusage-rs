@@ -27,7 +27,7 @@
   - pricing and derived metrics
   - report aggregation by mode
   - table/JSON rendering
-- All CLI report paths, including `statusline`, use `PricingCatalog::default_claude_catalog()` (Claude aliases plus provider-prefixed variants).
+- All CLI report paths, including `statusline`, use `PricingCatalog::default_catalog_with_live_openai()` (Claude/OpenAI aliases plus provider-prefixed variants).
 - Cost provenance is preserved across reports (`raw` vs `calculated` vs `missing`) and exposed in both JSON fields and human table `R/C/M` columns.
 - Deterministic JSON golden fixtures exist for every report mode.
 - Deterministic fixtures cover redesigned default human-readable layouts for `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`, plus representative shared-flag table behavior.
@@ -112,7 +112,8 @@
 
 ### Pricing and cost provenance contract
 
-- [x] Default catalog wiring is shared by every report mode and `statusline` (`PricingCatalog::default_claude_catalog()`)
+- [x] Default catalog wiring is shared by every report mode and `statusline` (`PricingCatalog::default_catalog_with_live_openai()`)
+- [x] OpenAI pricing has compiled fallbacks and a live refresh path from the official OpenAI pricing page when not offline
 - [x] `CostMode::Auto` behavior is preserved: use raw cost when present, otherwise calculate for resolvable models, otherwise mark missing
 - [x] Known model events without raw `cost_usd` produce non-zero calculated totals in normal CLI flow
 - [x] Unknown/unresolvable models without raw `cost_usd` stay unresolved (`missing_entries` / `R/C/M`), with no synthetic pricing

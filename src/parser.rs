@@ -76,8 +76,11 @@ const INPUT_TOKEN_PATHS: &[&[&str]] = &[
     &["message", "usage", "input_tokens"],
     &["message", "usage", "inputTokens"],
     &["message", "usage", "prompt_tokens"],
+    &["message", "usage", "promptTokens"],
     &["response", "usage", "input_tokens"],
+    &["response", "usage", "inputTokens"],
     &["response", "usage", "prompt_tokens"],
+    &["response", "usage", "promptTokens"],
 ];
 
 const OUTPUT_TOKEN_PATHS: &[&[&str]] = &[
@@ -92,8 +95,11 @@ const OUTPUT_TOKEN_PATHS: &[&[&str]] = &[
     &["message", "usage", "output_tokens"],
     &["message", "usage", "outputTokens"],
     &["message", "usage", "completion_tokens"],
+    &["message", "usage", "completionTokens"],
     &["response", "usage", "output_tokens"],
+    &["response", "usage", "outputTokens"],
     &["response", "usage", "completion_tokens"],
+    &["response", "usage", "completionTokens"],
 ];
 
 const CACHE_CREATION_TOKEN_PATHS: &[&[&str]] = &[
@@ -115,7 +121,29 @@ const CACHE_READ_TOKEN_PATHS: &[&[&str]] = &[
     &["usage", "cacheReadInputTokens"],
     &["usage", "cache_read_tokens"],
     &["message", "usage", "cache_read_input_tokens"],
+    &["message", "usage", "cacheReadInputTokens"],
     &["response", "usage", "cache_read_input_tokens"],
+    &["response", "usage", "cacheReadInputTokens"],
+];
+
+const OPENAI_CACHED_TOKEN_PATHS: &[&[&str]] = &[
+    &["usage", "input_tokens_details", "cached_tokens"],
+    &["usage", "inputTokensDetails", "cachedTokens"],
+    &["usage", "prompt_tokens_details", "cached_tokens"],
+    &["usage", "promptTokensDetails", "cachedTokens"],
+    &["message", "usage", "input_tokens_details", "cached_tokens"],
+    &["message", "usage", "inputTokensDetails", "cachedTokens"],
+    &["message", "usage", "prompt_tokens_details", "cached_tokens"],
+    &["message", "usage", "promptTokensDetails", "cachedTokens"],
+    &["response", "usage", "input_tokens_details", "cached_tokens"],
+    &["response", "usage", "inputTokensDetails", "cachedTokens"],
+    &[
+        "response",
+        "usage",
+        "prompt_tokens_details",
+        "cached_tokens",
+    ],
+    &["response", "usage", "promptTokensDetails", "cachedTokens"],
 ];
 
 const TOTAL_TOKEN_PATHS: &[&[&str]] = &[
@@ -696,7 +724,10 @@ fn extract_usage(value: &JsonValue) -> Option<TokenUsage> {
     let output_tokens = extract_u64(value, OUTPUT_TOKEN_PATHS, OUTPUT_TOKEN_KEYS);
     let cache_creation_input_tokens =
         extract_u64(value, CACHE_CREATION_TOKEN_PATHS, CACHE_CREATION_TOKEN_KEYS);
-    let cache_read_input_tokens = extract_u64(value, CACHE_READ_TOKEN_PATHS, CACHE_READ_TOKEN_KEYS);
+    let explicit_cache_read_input_tokens =
+        extract_u64(value, CACHE_READ_TOKEN_PATHS, CACHE_READ_TOKEN_KEYS);
+    let openai_cached_input_tokens = extract_u64(value, OPENAI_CACHED_TOKEN_PATHS, &[]);
+    let cache_read_input_tokens = explicit_cache_read_input_tokens.or(openai_cached_input_tokens);
     let total_tokens = extract_u64(value, TOTAL_TOKEN_PATHS, TOTAL_TOKEN_KEYS);
 
     let has_usage = input_tokens.is_some()
@@ -707,6 +738,12 @@ fn extract_usage(value: &JsonValue) -> Option<TokenUsage> {
     if !has_usage {
         return None;
     }
+
+    let input_tokens = if explicit_cache_read_input_tokens.is_none() {
+        input_tokens.map(|tokens| tokens.saturating_sub(openai_cached_input_tokens.unwrap_or(0)))
+    } else {
+        input_tokens
+    };
 
     Some(TokenUsage::new(
         input_tokens.unwrap_or(0),
@@ -1117,6 +1154,34 @@ mod tests {
         assert_eq!(parsed.events[1].usage.output_tokens, 6);
         assert_eq!(parsed.events[1].usage.total_tokens, 10);
         assert_eq!(parsed.events[1].raw_cost_usd, Some(0.123));
+    }
+
+    #[test]
+    fn parses_openai_usage_and_cached_token_details() {
+        let test_dir = TestDir::new();
+        let file = test_dir.path().join("openai.jsonl");
+        let content = concat!(
+            "{\"created_at\":1700000100,\"type\":\"assistant\",\"session_id\":\"s-openai\",\"project\":\"openai\",\"model\":\"gpt-5.5\",\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":25,\"prompt_tokens_details\":{\"cached_tokens\":40},\"total_tokens\":125}}\n",
+            "{\"timestamp\":\"2026-03-10T10:00:00Z\",\"message\":{\"usage\":{\"input_tokens\":20,\"output_tokens\":10,\"input_tokens_details\":{\"cached_tokens\":5}},\"model\":\"openai/gpt-4o-mini\"}}\n"
+        );
+
+        write(&file, content).expect("failed to write fixture file");
+
+        let parsed = parse_jsonl_file(&file);
+
+        assert!(parsed.warnings.is_empty());
+        assert_eq!(parsed.events.len(), 2);
+        assert_eq!(parsed.events[0].model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(parsed.events[0].usage.input_tokens, 60);
+        assert_eq!(parsed.events[0].usage.output_tokens, 25);
+        assert_eq!(parsed.events[0].usage.cache_read_input_tokens, 40);
+        assert_eq!(parsed.events[0].usage.total_tokens, 125);
+        assert_eq!(
+            parsed.events[1].model.as_deref(),
+            Some("openai/gpt-4o-mini")
+        );
+        assert_eq!(parsed.events[1].usage.input_tokens, 15);
+        assert_eq!(parsed.events[1].usage.cache_read_input_tokens, 5);
     }
 
     #[test]
