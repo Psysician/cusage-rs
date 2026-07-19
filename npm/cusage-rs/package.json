@@ -1,0 +1,38 @@
+{
+  "name": "cusage-rs",
+  "version": "0.0.0-dev",
+  "description": "Fast CLI to track Claude/OpenAI token usage and costs",
+  "keywords": [
+    "claude-code",
+    "openai",
+    "usage",
+    "tokens",
+    "cost",
+    "cli"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/Psysician/cusage-rs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Psysician/cusage-rs.git"
+  },
+  "bin": {
+    "cusage-rs": "bin/cusage-rs.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "cusage-rs-linux-x64": "0.0.0-dev",
+    "cusage-rs-linux-arm64": "0.0.0-dev",
+    "cusage-rs-linux-x64-musl": "0.0.0-dev",
+    "cusage-rs-linux-arm64-musl": "0.0.0-dev",
+    "cusage-rs-darwin-x64": "0.0.0-dev",
+    "cusage-rs-darwin-arm64": "0.0.0-dev",
+    "cusage-rs-win32-x64": "0.0.0-dev",
+    "cusage-rs-win32-arm64": "0.0.0-dev"
+  }
+}

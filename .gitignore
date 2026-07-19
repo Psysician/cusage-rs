@@ -7,4 +7,5 @@
 .npmrc
 /.cargo
 /npm-dist
+/npm/dist
 
