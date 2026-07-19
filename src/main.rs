@@ -40,50 +40,72 @@ struct Cli {
 
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 enum Command {
+    /// Show token usage and cost aggregated by day
     Daily(ReportArgs),
+    /// Show token usage and cost aggregated by week
     Weekly(ReportArgs),
+    /// Show token usage and cost aggregated by month
     Monthly(ReportArgs),
+    /// Show token usage and cost aggregated by session
     Session(ReportArgs),
+    /// Show token usage and cost aggregated by 5-hour billing block
     Blocks(ReportArgs),
+    /// Print a compact one-line usage summary for shell status lines
     Statusline(StatuslineArgs),
 }
 
 #[derive(Debug, Args, Clone, PartialEq, Eq, Default)]
 struct ReportArgs {
+    /// Only include usage on or after this date (YYYYMMDD)
     #[arg(long, value_name = "YYYYMMDD")]
     since: Option<String>,
+    /// Only include usage on or before this date (YYYYMMDD)
     #[arg(long, value_name = "YYYYMMDD")]
     until: Option<String>,
+    /// Print the report as JSON instead of a table
     #[arg(long, short = 'j')]
     json: bool,
+    /// Break each row down per model
     #[arg(long, short = 'b')]
     breakdown: bool,
+    /// Use a compact, space-separated table layout
     #[arg(long)]
     compact: bool,
+    /// Include a count of distinct instances (sessions) in the summary
     #[arg(long, short = 'i')]
     instances: bool,
+    /// Only include usage from this project
     #[arg(long, short = 'p', value_name = "NAME")]
     project: Option<String>,
+    /// Timezone for date bucketing: UTC/GMT/Z or a fixed offset like +02:00 (IANA names not supported)
     #[arg(long, short = 'z', value_name = "TZ")]
     timezone: Option<String>,
+    /// Format numbers for this locale (e.g. en-US, de-DE)
     #[arg(long, short = 'l', value_name = "LOCALE")]
     locale: Option<String>,
+    /// Load settings from this config file
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
+    /// Skip the live pricing refresh; use only the compiled catalog
     #[arg(long, short = 'O', action = ArgAction::SetTrue, overrides_with = "no_offline")]
     offline: bool,
+    /// Force the live pricing refresh even if the config enables offline
     #[arg(long = "no-offline", action = ArgAction::SetTrue, overrides_with = "offline")]
     no_offline: bool,
 }
 
 #[derive(Debug, Args, Clone, PartialEq, Eq, Default)]
 struct StatuslineArgs {
+    /// Print the statusline payload as JSON instead of text
     #[arg(long, short = 'j')]
     json: bool,
+    /// Load settings from this config file
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
+    /// Skip the live pricing refresh; use only the compiled catalog
     #[arg(long, short = 'O', action = ArgAction::SetTrue, overrides_with = "no_offline")]
     offline: bool,
+    /// Force the live pricing refresh even if the config enables offline
     #[arg(long = "no-offline", action = ArgAction::SetTrue, overrides_with = "offline")]
     no_offline: bool,
 }
