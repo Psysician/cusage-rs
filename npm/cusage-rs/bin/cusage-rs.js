@@ -18,9 +18,12 @@ function isMusl() {
   return false;
 }
 
+// Platform packages are published under this scope (see npm/scripts/prepare-packages.js).
+const SCOPE = '@psysician';
+
 function candidatePackages() {
   const { platform, arch } = process;
-  const base = `cusage-rs-${platform}-${arch}`;
+  const base = `${SCOPE}/cusage-rs-${platform}-${arch}`;
   if (platform !== 'linux') {
     return [base];
   }

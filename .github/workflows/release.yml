@@ -214,13 +214,45 @@ jobs:
 
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          for dir in npm/dist/cusage-rs-*; do
-            npm publish "$dir" --access public
-          done
-          npm publish npm/dist/cusage-rs --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -u
+          publish() {
+            dir="$1"
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "= skip $name@$version (already published)"
+              return 0
+            fi
+            for attempt in 1 2 3; do
+              if npm publish "$dir" --access public; then
+                echo "+ published $name@$version"
+                return 0
+              fi
+              echo "! publish $name@$version failed (attempt $attempt/3), retrying in 20s"
+              sleep 20
+            done
+            # A publish can fail after the registry accepted the tarball (dropped
+            # response), which turns every retry into a "cannot publish over
+            # existing version" conflict. Re-check before declaring failure.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "= $name@$version is on the registry after all — treating as success" >&2
+              return 0
+            fi
+            echo "x FAILED to publish $name@$version" >&2
+            return 1
+          }
+          rc=0
+          # Publish platform packages before the meta package so its
+          # optionalDependencies resolve on install. Skips versions already on
+          # the registry (idempotent re-runs) and retries transient failures.
+          for dir in npm/dist/cusage-rs-*; do
+            publish "$dir" || rc=1
+          done
+          publish npm/dist/cusage-rs || rc=1
+          exit $rc
 
       - name: Publish to npm (dry run)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}

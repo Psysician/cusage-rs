@@ -26,13 +26,13 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "cusage-rs-linux-x64": "0.0.0-dev",
-    "cusage-rs-linux-arm64": "0.0.0-dev",
-    "cusage-rs-linux-x64-musl": "0.0.0-dev",
-    "cusage-rs-linux-arm64-musl": "0.0.0-dev",
-    "cusage-rs-darwin-x64": "0.0.0-dev",
-    "cusage-rs-darwin-arm64": "0.0.0-dev",
-    "cusage-rs-win32-x64": "0.0.0-dev",
-    "cusage-rs-win32-arm64": "0.0.0-dev"
+    "@psysician/cusage-rs-linux-x64": "0.0.0-dev",
+    "@psysician/cusage-rs-linux-arm64": "0.0.0-dev",
+    "@psysician/cusage-rs-linux-x64-musl": "0.0.0-dev",
+    "@psysician/cusage-rs-linux-arm64-musl": "0.0.0-dev",
+    "@psysician/cusage-rs-darwin-x64": "0.0.0-dev",
+    "@psysician/cusage-rs-darwin-arm64": "0.0.0-dev",
+    "@psysician/cusage-rs-win32-x64": "0.0.0-dev",
+    "@psysician/cusage-rs-win32-arm64": "0.0.0-dev"
   }
 }
