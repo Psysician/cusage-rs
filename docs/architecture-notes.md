@@ -12,8 +12,8 @@
 3. Aggregate by report mode: day, month, session, or billing block.
    - Weekly and statusline modes are also implemented.
 4. Resolve pricing and derived metrics.
-   - Every CLI/report path uses `PricingCatalog::default_catalog_with_live_openai()` (Claude/OpenAI aliases and common provider-prefixed forms).
-   - Online runs attempt to refresh OpenAI prices from the official OpenAI pricing page; `--offline` uses compiled fallback prices.
+   - Every CLI/report path uses `PricingCatalog::default_catalog_with_live()` (Claude/OpenAI aliases and common provider-prefixed forms, plus the `[1m]` context-window id suffix stripped during lookup).
+   - Online runs attempt to refresh Claude prices from the official Anthropic pricing page and OpenAI prices from the official OpenAI pricing page; `--offline` uses compiled fallback prices.
    - Cost source attribution is preserved (`raw`, `calculated`, `missing`) and rolled into per-row and totals metrics.
    - `CostMode::Auto` is the active runtime behavior: raw cost first, calculated cost for known models when raw is absent, missing when unresolved.
 5. Render either table output or JSON output.
@@ -30,7 +30,7 @@
 - `discovery`: file-system traversal and input selection
 - `parser`: JSONL event decoding and normalization
 - `domain`: token/cost models and report records
-- `pricing`: cost-mode resolution, Claude/OpenAI default catalogs, live OpenAI pricing refresh, alias normalization, model lookup, and derived metric math
+- `pricing`: cost-mode resolution, Claude/OpenAI default catalogs, live Anthropic/OpenAI pricing refresh, alias normalization, model lookup, and derived metric math
 - `report`: aggregation and rendering for all report modes, including shared default human table layout and statusline formatter
 
 Aggregation and rendering live in `src/report.rs`; CLI orchestration and shared filtering live in `src/main.rs`.
@@ -49,4 +49,4 @@ Aggregation and rendering live in `src/report.rs`; CLI orchestration and shared 
 - Non-catalog model ids without raw event cost remain unresolved (`missing`) until catalog coverage is extended.
 - No CLI/config hook currently exists for user-supplied pricing catalogs; runtime pricing mode is fixed to `CostMode::Auto` until `--mode` parity lands.
 - Timezone handling is fixed-offset based; IANA zone names are not currently accepted.
-- Offline mode is precedence-aware in config resolution but currently operationally neutral in the report runtime path.
+- Offline mode is precedence-aware in config resolution; at runtime it disables the live Anthropic/OpenAI pricing refresh so only the compiled catalog is used.

@@ -703,6 +703,14 @@ fn normalize_usage_event(
         return Err("missing parseable timestamp".to_owned());
     };
 
+    let model = extract_string(value, MODEL_PATHS, MODEL_KEYS);
+    if is_synthetic_model(model.as_deref()) {
+        // Claude Code records synthetic (locally-generated, non-API) messages with
+        // model "<synthetic>" and no real token usage; skip them so they do not
+        // surface as empty $0.00 rows in reports.
+        return Ok(None);
+    }
+
     Ok(Some(UsageEvent {
         origin: EventOrigin {
             file: file.to_path_buf(),
@@ -712,11 +720,18 @@ fn normalize_usage_event(
         event_kind,
         session_id: extract_string(value, SESSION_ID_PATHS, SESSION_ID_KEYS),
         project: extract_project(value, file),
-        model: extract_string(value, MODEL_PATHS, MODEL_KEYS),
+        model,
         speed: UsageSpeed::from_raw(extract_string(value, SPEED_PATHS, SPEED_KEYS).as_deref()),
         usage: usage.expect("usage presence checked above"),
         raw_cost_usd: extract_f64(value, COST_PATHS, COST_KEYS),
     }))
+}
+
+/// Claude Code marks synthetic, locally-generated messages (interrupts, injected
+/// notices, etc.) with the model id `<synthetic>`. They carry no real usage and
+/// should not appear in reports.
+fn is_synthetic_model(model: Option<&str>) -> bool {
+    model.is_some_and(|model| model.trim().eq_ignore_ascii_case("<synthetic>"))
 }
 
 fn extract_usage(value: &JsonValue) -> Option<TokenUsage> {
@@ -1154,6 +1169,29 @@ mod tests {
         assert_eq!(parsed.events[1].usage.output_tokens, 6);
         assert_eq!(parsed.events[1].usage.total_tokens, 10);
         assert_eq!(parsed.events[1].raw_cost_usd, Some(0.123));
+    }
+
+    #[test]
+    fn skips_synthetic_model_records() {
+        let test_dir = TestDir::new();
+        let file = test_dir.path().join("synthetic.jsonl");
+        // The second record is a Claude Code synthetic message. It carries usage
+        // here so the drop is attributable to the model filter, not the empty-usage
+        // guard, but real synthetic messages have no billable usage regardless.
+        let content = concat!(
+            "{\"timestamp\":1700000000,\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"model\":\"claude-opus-4-8\"}}\n",
+            "{\"timestamp\":1700000001,\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":8,\"output_tokens\":4},\"model\":\"<synthetic>\"}}\n"
+        );
+
+        write(&file, content).expect("failed to write fixture file");
+
+        let parsed = parse_jsonl_file(&file);
+
+        // The synthetic record is dropped silently (not a warning); only the real
+        // assistant event remains.
+        assert!(parsed.warnings.is_empty());
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].model.as_deref(), Some("claude-opus-4-8"));
     }
 
     #[test]

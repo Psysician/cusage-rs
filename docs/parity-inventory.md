@@ -27,7 +27,7 @@
   - pricing and derived metrics
   - report aggregation by mode
   - table/JSON rendering
-- All CLI report paths, including `statusline`, use `PricingCatalog::default_catalog_with_live_openai()` (Claude/OpenAI aliases plus provider-prefixed variants).
+- All CLI report paths, including `statusline`, use `PricingCatalog::default_catalog_with_live()` (Claude/OpenAI aliases plus provider-prefixed variants, including the `[1m]` context-window id suffix Claude Code writes).
 - Cost provenance is preserved across reports (`raw` vs `calculated` vs `missing`) and exposed in both JSON fields and human table `R/C/M` columns.
 - Deterministic JSON golden fixtures exist for every report mode.
 - Deterministic fixtures cover redesigned default human-readable layouts for `daily`, `weekly`, `monthly`, `session`, `blocks`, and `statusline`, plus representative shared-flag table behavior.
@@ -112,8 +112,8 @@
 
 ### Pricing and cost provenance contract
 
-- [x] Default catalog wiring is shared by every report mode and `statusline` (`PricingCatalog::default_catalog_with_live_openai()`)
-- [x] OpenAI pricing has compiled fallbacks and a live refresh path from the official OpenAI pricing page when not offline
+- [x] Default catalog wiring is shared by every report mode and `statusline` (`PricingCatalog::default_catalog_with_live()`)
+- [x] Claude and OpenAI pricing each have compiled fallbacks and a live refresh path from the official Anthropic and OpenAI pricing pages when not offline
 - [x] `CostMode::Auto` behavior is preserved: use raw cost when present, otherwise calculate for resolvable models, otherwise mark missing
 - [x] Known model events without raw `cost_usd` produce non-zero calculated totals in normal CLI flow
 - [x] Unknown/unresolvable models without raw `cost_usd` stay unresolved (`missing_entries` / `R/C/M`), with no synthetic pricing
@@ -122,7 +122,7 @@
 ## Explicit residual deltas
 
 - Missing options listed as unchecked above remain out of scope for the current rewrite milestone and are not exposed by the Rust CLI.
-- Pricing defaults are static and Claude-focused; non-Claude/new model identifiers rely on raw event cost fields unless added to the local catalog.
+- Pricing defaults are compiled in for Claude and OpenAI models and refreshed live from the official pricing pages when online; identifiers from other providers rely on raw event cost fields unless added to the catalog.
 - `--timezone` does not currently accept IANA zone names (for example `Europe/Berlin`); only UTC/GMT/Z and signed fixed offsets are supported.
-- `--offline` is parsed and precedence-aware, but currently operationally neutral because this rewrite does not make network calls in the report pipeline.
+- `--offline` is parsed and precedence-aware; when set, the report pipeline skips the live Anthropic/OpenAI pricing fetch (its only network access) and uses the compiled catalog only.
 - CLI binary name remains `cusage-rs`.

@@ -5,6 +5,8 @@ use std::process::Command;
 const TIER_THRESHOLD_TOKENS: u64 = 200_000;
 const DEFAULT_FAST_MULTIPLIER: f64 = 1.0;
 pub const OPENAI_PRICING_URL: &str = "https://developers.openai.com/api/docs/pricing";
+pub const ANTHROPIC_PRICING_URL: &str =
+    "https://platform.claude.com/docs/en/about-claude/pricing.md";
 const DEFAULT_PROVIDER_PREFIXES: &[&str] = &[
     "anthropic",
     "openai",
@@ -14,21 +16,24 @@ const DEFAULT_PROVIDER_PREFIXES: &[&str] = &[
     "azure",
     "gemini",
 ];
+/// Models whose rows on the OpenAI pricing page are plain per-MTok token tables
+/// (`Input | Cached input | [Cache writes |] Output`) and are therefore safe to
+/// refresh live. Audio-per-minute (`*-transcribe`), realtime, and image models
+/// are deliberately excluded: their rows carry per-minute or per-modality
+/// figures that positional parsing would misread as token prices and merge over
+/// the correct compiled defaults (e.g. a transcribe row's `$0.006 / minute`
+/// would overwrite the $10/MTok text-output price). Keep this list token-only;
+/// non-token models rely on their compiled defaults in `with_default_openai_pricing`.
 const OPENAI_LIVE_PRICE_MODELS: &[&str] = &[
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
     "gpt-5.5-pro",
     "gpt-5.5",
     "gpt-5.4-mini",
     "gpt-5.4-nano",
     "gpt-5.4-pro",
     "gpt-5.4",
-    "gpt-realtime-2",
-    "gpt-realtime-1.5",
-    "gpt-realtime-mini",
-    "gpt-image-2",
-    "gpt-image-1.5",
-    "gpt-image-1-mini",
-    "gpt-4o-transcribe",
-    "gpt-4o-mini-transcribe",
     "chat-latest",
     "gpt-5.3-codex",
     "o3-deep-research",
@@ -41,7 +46,7 @@ const CLAUDE_4_OPUS_ALIASES: &[&str] = &[
     "claude-opus",
     "anthropic.claude-opus-4-20250514-v1:0",
 ];
-const CLAUDE_4_5_OPUS_ALIASES: &[&str] = &["claude-opus-4-5"];
+const CLAUDE_4_5_OPUS_ALIASES: &[&str] = &["claude-opus-4-5", "claude-opus-4-5-20251101"];
 const CLAUDE_4_6_OPUS_ALIASES: &[&str] = &[
     "claude-opus-4-6",
     "claude-opus-4-6-20260205",
@@ -93,6 +98,30 @@ const CLAUDE_3_HAIKU_ALIASES: &[&str] = &[
     "claude-3-haiku",
     "claude-haiku",
     "anthropic.claude-3-haiku-20240307-v1:0",
+];
+const CLAUDE_4_7_OPUS_ALIASES: &[&str] = &["claude-opus-4-7", "anthropic.claude-opus-4-7"];
+const CLAUDE_4_8_OPUS_ALIASES: &[&str] = &["claude-opus-4-8", "anthropic.claude-opus-4-8"];
+const CLAUDE_4_1_OPUS_ALIASES: &[&str] = &[
+    "claude-opus-4-1",
+    "claude-opus-4-1-20250805",
+    "anthropic.claude-opus-4-1-20250805-v1:0",
+];
+const CLAUDE_5_SONNET_ALIASES: &[&str] = &["claude-sonnet-5", "anthropic.claude-sonnet-5"];
+const CLAUDE_FABLE_5_ALIASES: &[&str] = &["claude-fable-5", "anthropic.claude-fable-5", "fable"];
+const CLAUDE_MYTHOS_5_ALIASES: &[&str] = &["claude-mythos-5", "anthropic.claude-mythos-5"];
+const CLAUDE_MYTHOS_PREVIEW_ALIASES: &[&str] = &["claude-mythos-preview"];
+/// Display-name -> alias mapping used to refresh Claude prices from Anthropic's
+/// official pricing page (`ANTHROPIC_PRICING_URL`). The page labels each row by
+/// display name, so map those back to the ids Claude Code writes to its logs.
+const CLAUDE_LIVE_PRICE_MODELS: &[(&str, &[&str])] = &[
+    ("Claude Fable 5", CLAUDE_FABLE_5_ALIASES),
+    ("Claude Mythos 5", CLAUDE_MYTHOS_5_ALIASES),
+    ("Claude Opus 4.8", CLAUDE_4_8_OPUS_ALIASES),
+    ("Claude Opus 4.7", CLAUDE_4_7_OPUS_ALIASES),
+    ("Claude Opus 4.6", CLAUDE_4_6_OPUS_ALIASES),
+    ("Claude Sonnet 5", CLAUDE_5_SONNET_ALIASES),
+    ("Claude Sonnet 4.6", CLAUDE_4_6_SONNET_ALIASES),
+    ("Claude Haiku 4.5", CLAUDE_4_5_HAIKU_ALIASES),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -212,10 +241,21 @@ impl PricingCatalog {
     }
 
     #[must_use]
-    pub fn default_catalog_with_live_openai(allow_live_fetch: bool) -> Self {
+    pub fn default_catalog_with_live(allow_live_fetch: bool) -> Self {
         let mut catalog = Self::default_catalog();
-        if allow_live_fetch && let Ok(live_catalog) = fetch_live_openai_pricing() {
-            catalog.merge_from(&live_catalog);
+        if allow_live_fetch {
+            // Refresh Claude prices from Anthropic and OpenAI prices from OpenAI.
+            // Run both fetches concurrently so total latency stays bounded by a
+            // single curl timeout, not the sum; each is best-effort and falls
+            // back to the compiled catalog on any error (offline, parse, panic).
+            let anthropic = std::thread::spawn(fetch_live_anthropic_pricing);
+            let openai = std::thread::spawn(fetch_live_openai_pricing);
+            if let Ok(Ok(live_catalog)) = anthropic.join() {
+                catalog.merge_from(&live_catalog);
+            }
+            if let Ok(Ok(live_catalog)) = openai.join() {
+                catalog.merge_from(&live_catalog);
+            }
         }
         catalog
     }
@@ -233,38 +273,60 @@ impl PricingCatalog {
 
     #[must_use]
     pub fn with_default_claude_pricing(mut self) -> Self {
+        // Sonnet: 3.x is flat; 4 / 4.5 carry the historical >200k long-context
+        // surcharge; 4.6 and 5 bill the full 1M window at a flat rate (Anthropic).
         let claude_4_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3)
             .with_tiered_per_million(Some(6.0), Some(22.5), Some(7.5), Some(0.6));
+        let claude_4_6_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
         let claude_3_sonnet_pricing = ModelPricing::from_per_million(3.0, 15.0, 3.75, 0.3);
+        // Sonnet 5 introductory pricing (in effect through 2026-08-31); Anthropic
+        // steps it up to (3.0, 15.0, 3.75, 0.3) on 2026-09-01. The live fetch reads
+        // whichever Sonnet 5 row the pricing page lists first, so it only tracks the
+        // step-up once the page drops or reorders the introductory row; until then
+        // this compiled default must be bumped in a release after the intro period.
+        let claude_5_sonnet_pricing = ModelPricing::from_per_million(2.0, 10.0, 2.5, 0.2);
         let claude_4_haiku_pricing = ModelPricing::from_per_million(1.0, 5.0, 1.25, 0.1);
         let claude_3_5_haiku_pricing = ModelPricing::from_per_million(0.8, 4.0, 1.0, 0.08);
         let claude_3_haiku_pricing = ModelPricing::from_per_million(0.25, 1.25, 0.3, 0.03);
         let claude_4_opus_pricing = ModelPricing::from_per_million(15.0, 75.0, 18.75, 1.5);
-        let claude_4_5_opus_pricing = ModelPricing::from_per_million(5.0, 25.0, 6.25, 0.5);
-        let claude_4_6_opus_pricing = ModelPricing::from_per_million(5.0, 25.0, 6.25, 0.5)
-            .with_tiered_per_million(Some(10.0), Some(37.5), Some(12.5), Some(1.0));
+        // Opus 4.5–4.8 share flat $5/$25 pricing (full 1M context at standard rate).
+        let claude_opus_5_pricing = ModelPricing::from_per_million(5.0, 25.0, 6.25, 0.5);
+        // Fable 5 / Mythos 5 / Mythos Preview: flat $10/$50 (1M context).
+        let claude_fable_5_pricing = ModelPricing::from_per_million(10.0, 50.0, 12.5, 1.0);
 
         self.insert_aliases(CLAUDE_4_OPUS_ALIASES, &claude_4_opus_pricing);
-        self.insert_aliases(CLAUDE_4_5_OPUS_ALIASES, &claude_4_5_opus_pricing);
-        self.insert_aliases(CLAUDE_4_6_OPUS_ALIASES, &claude_4_6_opus_pricing);
+        self.insert_aliases(CLAUDE_4_1_OPUS_ALIASES, &claude_4_opus_pricing);
+        self.insert_aliases(CLAUDE_4_5_OPUS_ALIASES, &claude_opus_5_pricing);
+        self.insert_aliases(CLAUDE_4_6_OPUS_ALIASES, &claude_opus_5_pricing);
+        self.insert_aliases(CLAUDE_4_7_OPUS_ALIASES, &claude_opus_5_pricing);
+        self.insert_aliases(CLAUDE_4_8_OPUS_ALIASES, &claude_opus_5_pricing);
         self.insert_aliases(CLAUDE_4_SONNET_ALIASES, &claude_4_sonnet_pricing);
         self.insert_aliases(CLAUDE_4_5_SONNET_ALIASES, &claude_4_sonnet_pricing);
-        self.insert_aliases(CLAUDE_4_6_SONNET_ALIASES, &claude_4_sonnet_pricing);
+        self.insert_aliases(CLAUDE_4_6_SONNET_ALIASES, &claude_4_6_sonnet_pricing);
+        self.insert_aliases(CLAUDE_5_SONNET_ALIASES, &claude_5_sonnet_pricing);
         self.insert_aliases(CLAUDE_3_7_SONNET_ALIASES, &claude_3_sonnet_pricing);
         self.insert_aliases(CLAUDE_3_5_SONNET_ALIASES, &claude_3_sonnet_pricing);
         self.insert_aliases(CLAUDE_4_5_HAIKU_ALIASES, &claude_4_haiku_pricing);
         self.insert_aliases(CLAUDE_3_5_HAIKU_ALIASES, &claude_3_5_haiku_pricing);
         self.insert_aliases(CLAUDE_3_OPUS_ALIASES, &claude_4_opus_pricing);
         self.insert_aliases(CLAUDE_3_HAIKU_ALIASES, &claude_3_haiku_pricing);
+        self.insert_aliases(CLAUDE_FABLE_5_ALIASES, &claude_fable_5_pricing);
+        self.insert_aliases(CLAUDE_MYTHOS_5_ALIASES, &claude_fable_5_pricing);
+        self.insert_aliases(CLAUDE_MYTHOS_PREVIEW_ALIASES, &claude_fable_5_pricing);
 
         self
     }
 
     #[must_use]
     pub fn with_default_openai_pricing(mut self) -> Self {
+        self.insert_openai_model("gpt-5.6", 5.0, Some(0.5), 30.0);
+        self.insert_openai_model("gpt-5.6-sol", 5.0, Some(0.5), 30.0);
+        self.insert_openai_model("gpt-5.6-terra", 2.5, Some(0.25), 15.0);
+        self.insert_openai_model("gpt-5.6-luna", 1.0, Some(0.1), 6.0);
         self.insert_openai_model("gpt-5.5", 5.0, Some(0.5), 30.0);
         self.insert_openai_model("gpt-5.5-2026-04-23", 5.0, Some(0.5), 30.0);
         self.insert_openai_model("gpt-5.5-pro", 30.0, None, 180.0);
+        self.insert_openai_model("gpt-5.5-pro-2026-04-23", 30.0, None, 180.0);
         self.insert_openai_model("gpt-5.4", 2.5, Some(0.25), 15.0);
         self.insert_openai_model("gpt-5.4-mini", 0.75, Some(0.075), 4.5);
         self.insert_openai_model("gpt-5.4-nano", 0.20, Some(0.02), 1.25);
@@ -433,27 +495,92 @@ pub fn parse_openai_pricing_page(contents: &str) -> PricingCatalog {
     catalog
 }
 
-pub fn fetch_live_openai_pricing() -> Result<PricingCatalog, String> {
+fn fetch_pricing_page(url: &str) -> Result<String, String> {
     let output = Command::new("curl")
-        .args(["-fsSL", "--max-time", "8", OPENAI_PRICING_URL])
+        .args(["-fsSL", "--max-time", "8", url])
         .output()
-        .map_err(|error| format!("failed to run curl for OpenAI pricing: {error}"))?;
+        .map_err(|error| format!("failed to run curl for {url}: {error}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "failed to fetch OpenAI pricing from {OPENAI_PRICING_URL}: {stderr}"
-        ));
+        return Err(format!("failed to fetch pricing from {url}: {stderr}"));
     }
 
-    let contents = String::from_utf8(output.stdout)
-        .map_err(|error| format!("OpenAI pricing response was not valid UTF-8: {error}"))?;
+    String::from_utf8(output.stdout)
+        .map_err(|error| format!("pricing response from {url} was not valid UTF-8: {error}"))
+}
+
+pub fn fetch_live_openai_pricing() -> Result<PricingCatalog, String> {
+    let contents = fetch_pricing_page(OPENAI_PRICING_URL)?;
     let catalog = parse_openai_pricing_page(&contents);
     if catalog.by_model.is_empty() {
         return Err("OpenAI pricing response did not contain parseable token rows".to_owned());
     }
-
     Ok(catalog)
+}
+
+pub fn fetch_live_anthropic_pricing() -> Result<PricingCatalog, String> {
+    let contents = fetch_pricing_page(ANTHROPIC_PRICING_URL)?;
+    let catalog = parse_anthropic_pricing_page(&contents);
+    if catalog.by_model.is_empty() {
+        return Err("Anthropic pricing response did not contain parseable token rows".to_owned());
+    }
+    Ok(catalog)
+}
+
+#[must_use]
+pub fn parse_anthropic_pricing_page(contents: &str) -> PricingCatalog {
+    let mut catalog = PricingCatalog::new();
+
+    for entry in CLAUDE_LIVE_PRICE_MODELS {
+        let (display_name, aliases) = *entry;
+        // The table lists Sonnet 5 twice (introductory + standard); the first
+        // matching row is the currently-effective one, so take the first match.
+        // Require the `MTok` price unit so prose mentions can't false-match.
+        let Some(line) = contents
+            .lines()
+            .find(|line| line.contains(display_name) && line.contains("MTok"))
+        else {
+            continue;
+        };
+        // Row columns: Base Input | 5m Write | 1h Write | Cache Read | Output.
+        let cells = parse_anthropic_price_cells(line);
+        let (Some(&input), Some(&cache_write_5m), Some(&cache_read), Some(&output)) =
+            (cells.first(), cells.get(1), cells.get(3), cells.get(4))
+        else {
+            continue;
+        };
+        let pricing = ModelPricing::from_per_million(input, output, cache_write_5m, cache_read);
+        catalog.insert_aliases(aliases, &pricing);
+    }
+
+    catalog
+}
+
+/// Collect every `$<number>` value from a pricing-table row, in order. Unlike
+/// `parse_price_cells`, this tolerates ` / MTok` unit text and `|` separators
+/// between cells (Anthropic's Markdown pricing-table format).
+fn parse_anthropic_price_cells(line: &str) -> Vec<f64> {
+    let mut cells = Vec::new();
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'$' {
+            index += 1;
+            let start = index;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_digit() || bytes[index] == b'.' || bytes[index] == b',')
+            {
+                index += 1;
+            }
+            if let Ok(value) = line[start..index].replace(',', "").parse::<f64>() {
+                cells.push(value);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    cells
 }
 
 fn openai_model_pricing(
@@ -529,9 +656,27 @@ fn is_model_char(ch: char) -> bool {
 }
 
 fn openai_pricing_from_cells(cells: &[Option<f64>]) -> Option<ModelPricing> {
+    // OpenAI's flagship pricing table repeats its columns across two context
+    // tiers (standard, then long context), each `Input | Cached input | Cache
+    // writes | Output`, so those rows expose an even number of price cells and
+    // the standard-tier Output is the last column of the first half. Specialized
+    // and per-modality tables list a single `Input | Cached input | Output`
+    // tier, where Output is the final cell. Deriving the tier width from the cell
+    // count keeps Output correct whether or not a "Cache writes" column is
+    // present -- "-" entries are recorded as None by parse_price_cells, so every
+    // column keeps its position. A fixed index here mispriced the GPT-5.6 family
+    // (whose Cache-writes column is populated) at roughly one-fifth of real cost.
+    if cells.len() < 3 {
+        return None;
+    }
     let input = cells.first().copied().flatten()?;
     let cached = cells.get(1).copied().flatten();
-    let output = cells.get(2).copied().flatten()?;
+    let output_index = if cells.len().is_multiple_of(2) {
+        cells.len() / 2 - 1
+    } else {
+        cells.len() - 1
+    };
+    let output = cells.get(output_index).copied().flatten()?;
     Some(openai_model_pricing(input, cached, output))
 }
 
@@ -763,7 +908,16 @@ fn calculate_from_catalog(event: &UsageEvent, catalog: &PricingCatalog) -> Resol
 }
 
 fn normalize_model_key(model: &str) -> String {
-    model.trim().to_ascii_lowercase()
+    // Claude Code appends a `[1m]` marker (sometimes doubled) to 1M-context model
+    // ids, e.g. `claude-opus-4-8[1m]` / `claude-opus-4-6[1m][1m]`. The suffix selects
+    // the context window, not a differently-priced model, so strip it before lookup
+    // so ids resolve by exact match instead of relying on fuzzy matching. Display
+    // grouping is unaffected (report.rs keys off the raw model string).
+    let mut key = model.trim().to_ascii_lowercase();
+    while key.ends_with("[1m]") {
+        key.truncate(key.len() - "[1m]".len());
+    }
+    key.trim().to_string()
 }
 
 #[cfg(test)]
@@ -911,6 +1065,94 @@ mod tests {
         );
         assert!(catalog.resolve("claude-opus").is_some());
         assert!(catalog.resolve("claude-haiku").is_some());
+
+        // Generation 5 + Opus 4.7/4.8 (previously missing) and the [1m] context suffix.
+        assert!(catalog.resolve("claude-fable-5").is_some());
+        assert!(catalog.resolve("claude-fable-5[1m]").is_some());
+        assert!(catalog.resolve("fable").is_some());
+        assert!(catalog.resolve("claude-mythos-5").is_some());
+        assert!(catalog.resolve("claude-mythos-preview").is_some());
+        assert!(catalog.resolve("claude-sonnet-5").is_some());
+        assert!(catalog.resolve("claude-sonnet-5[1m]").is_some());
+        assert!(catalog.resolve("claude-opus-4-7").is_some());
+        assert!(catalog.resolve("claude-opus-4-8").is_some());
+        assert!(catalog.resolve("claude-opus-4-8[1m]").is_some());
+        assert!(catalog.resolve("claude-opus-4-8[1m][1m]").is_some());
+        assert!(catalog.resolve("anthropic/claude-fable-5").is_some());
+    }
+
+    #[test]
+    fn default_catalog_prices_generation_5_and_1m_suffix() {
+        let catalog = PricingCatalog::default_claude_catalog();
+
+        // Fable 5 / Mythos 5: flat $10 / $50 per 1M, 1.25x cache write, 0.1x read.
+        let fable = catalog.resolve("claude-fable-5").expect("fable 5 priced");
+        assert_close(fable.input_cost_per_token, 10.0 / 1_000_000.0);
+        assert_close(fable.output_cost_per_token, 50.0 / 1_000_000.0);
+        assert_close(
+            fable.cache_creation_input_cost_per_token,
+            12.5 / 1_000_000.0,
+        );
+        assert_close(fable.cache_read_input_cost_per_token, 1.0 / 1_000_000.0);
+        assert_eq!(
+            catalog.resolve("claude-mythos-5"),
+            catalog.resolve("claude-fable-5"),
+        );
+
+        // Opus 4.8 is $5 / $25 — not the $15 / $75 Opus 4 rate it previously
+        // fuzzy-matched to. The [1m] context suffix must resolve identically.
+        let opus_48 = catalog.resolve("claude-opus-4-8").expect("opus 4.8 priced");
+        assert_close(opus_48.input_cost_per_token, 5.0 / 1_000_000.0);
+        assert_close(opus_48.output_cost_per_token, 25.0 / 1_000_000.0);
+        assert_eq!(catalog.resolve("claude-opus-4-8[1m]"), Some(opus_48));
+        assert_eq!(catalog.resolve("claude-opus-4-8[1m][1m]"), Some(opus_48));
+        assert_ne!(
+            catalog
+                .resolve("claude-opus-4-8")
+                .map(|p| p.input_cost_per_token),
+            catalog
+                .resolve("claude-opus-4")
+                .map(|p| p.input_cost_per_token),
+        );
+
+        // Sonnet 5 introductory pricing ($2 / $10 per 1M).
+        let sonnet_5 = catalog.resolve("claude-sonnet-5").expect("sonnet 5 priced");
+        assert_close(sonnet_5.input_cost_per_token, 2.0 / 1_000_000.0);
+        assert_close(sonnet_5.output_cost_per_token, 10.0 / 1_000_000.0);
+    }
+
+    #[test]
+    fn parses_anthropic_pricing_page_rows_from_official_markdown_shape() {
+        // Verbatim column/cell shape from
+        // platform.claude.com/docs/en/about-claude/pricing.md.
+        let page = "\
+| Model | Base Input Tokens | 5m Cache Writes | 1h Cache Writes | Cache Hits & Refreshes | Output Tokens |
+| --- | --- | --- | --- | --- | --- |
+| Claude Fable 5 | $10 / MTok | $12.50 / MTok | $20 / MTok | $1 / MTok | $50 / MTok |
+| Claude Opus 4.8 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
+| Claude Sonnet 5 [through August 31, 2026](/x) | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.20 / MTok | $10 / MTok |
+| Claude Sonnet 5 starting September 1, 2026 | $3 / MTok | $3.75 / MTok | $6 / MTok | $0.30 / MTok | $15 / MTok |
+| Claude Haiku 4.5 | $1 / MTok | $1.25 / MTok | $2 / MTok | $0.10 / MTok | $5 / MTok |
+";
+        let catalog = parse_anthropic_pricing_page(page);
+
+        let fable = catalog.resolve("claude-fable-5").expect("fable parsed");
+        assert_close(fable.input_cost_per_token, 10.0 / 1_000_000.0);
+        assert_close(fable.output_cost_per_token, 50.0 / 1_000_000.0);
+        assert_close(
+            fable.cache_creation_input_cost_per_token,
+            12.5 / 1_000_000.0,
+        );
+        assert_close(fable.cache_read_input_cost_per_token, 1.0 / 1_000_000.0);
+
+        let opus = catalog.resolve("claude-opus-4-8").expect("opus 4.8 parsed");
+        assert_close(opus.input_cost_per_token, 5.0 / 1_000_000.0);
+        assert_close(opus.output_cost_per_token, 25.0 / 1_000_000.0);
+
+        // Sonnet 5 must take the currently-effective introductory row ($2 / $10).
+        let sonnet = catalog.resolve("claude-sonnet-5").expect("sonnet 5 parsed");
+        assert_close(sonnet.input_cost_per_token, 2.0 / 1_000_000.0);
+        assert_close(sonnet.output_cost_per_token, 10.0 / 1_000_000.0);
     }
 
     #[test]
@@ -940,6 +1182,37 @@ mod tests {
         assert!(catalog.resolve("openai/gpt-5.5").is_some());
         assert!(catalog.resolve("gpt-4o-mini").is_some());
         assert!(catalog.resolve("o4-mini").is_some());
+
+        // GPT-5.6 family (Sol / Terra / Luna) plus the bare alias.
+        assert!(catalog.resolve("gpt-5.6").is_some());
+        assert!(catalog.resolve("gpt-5.6-sol").is_some());
+        assert!(catalog.resolve("gpt-5.6-terra").is_some());
+        assert!(catalog.resolve("gpt-5.6-luna").is_some());
+        assert!(catalog.resolve("openai/gpt-5.6-terra").is_some());
+    }
+
+    #[test]
+    fn default_catalog_prices_gpt_5_6_family() {
+        let catalog = PricingCatalog::default_catalog();
+
+        // Sol: $5 / $30 in/out, $0.50 cached read; bare gpt-5.6 aliases to Sol.
+        let sol = catalog.resolve("gpt-5.6-sol").expect("sol priced");
+        assert_close(sol.input_cost_per_token, 5.0 / 1_000_000.0);
+        assert_close(sol.output_cost_per_token, 30.0 / 1_000_000.0);
+        assert_close(sol.cache_read_input_cost_per_token, 0.5 / 1_000_000.0);
+        assert_eq!(catalog.resolve("gpt-5.6"), Some(sol));
+
+        // Terra: $2.50 / $15, $0.25 cached read.
+        let terra = catalog.resolve("gpt-5.6-terra").expect("terra priced");
+        assert_close(terra.input_cost_per_token, 2.5 / 1_000_000.0);
+        assert_close(terra.output_cost_per_token, 15.0 / 1_000_000.0);
+        assert_close(terra.cache_read_input_cost_per_token, 0.25 / 1_000_000.0);
+
+        // Luna: $1 / $6, $0.10 cached read.
+        let luna = catalog.resolve("gpt-5.6-luna").expect("luna priced");
+        assert_close(luna.input_cost_per_token, 1.0 / 1_000_000.0);
+        assert_close(luna.output_cost_per_token, 6.0 / 1_000_000.0);
+        assert_close(luna.cache_read_input_cost_per_token, 0.1 / 1_000_000.0);
     }
 
     #[test]
@@ -963,19 +1236,48 @@ mod tests {
 
     #[test]
     fn parses_openai_pricing_page_rows_from_official_text_shape() {
+        // Mirrors the real developers.openai.com/api/docs/pricing shape: the
+        // flagship table lists two context tiers, each `Input | Cached input |
+        // Cache writes | Output` (eight price cells per row, "-" where a cell is
+        // absent); the specialized table lists a single `Input | Cached input |
+        // Output` tier. The populated Cache-writes column is what previously
+        // mispriced the GPT-5.6 rows.
         let catalog = parse_openai_pricing_page(
             r#"
-            Flagship models
-            Model Input Cached input Output Input Cached input Output
-            gpt-5.5$5.00$0.50$30.00$10.00$1.00$45.00
-            gpt-5.5-pro$30.00-$180.00$60.00-$270.00
-            gpt-5.4-mini$0.75$0.075$4.50---
+            Standard
+            Short context Long context
+            Model Input Cached input Cache writes Output Input Cached input Cache writes Output
+            gpt-5.6-sol$5.00$0.50$6.25$30.00$10.00$1.00$12.50$45.00
+            gpt-5.6-terra$2.50$0.25$3.125$15.00$5.00$0.50$6.25$22.50
+            gpt-5.6-luna$1.00$0.10$1.25$6.00$2.00$0.20$2.50$9.00
+            gpt-5.5$5.00$0.50-$30.00$10.00$1.00-$45.00
+            gpt-5.5-pro$30.00--$180.00$60.00--$270.00
             Specialized models
             Category Model Input Cached input Output
             Codex gpt-5.3-codex$1.75$0.175$14.00
             "#,
         );
 
+        // GPT-5.6 flagship rows: Output is the 4th column ($30/$15/$6), not the
+        // Cache-writes column ($6.25/$3.125/$1.25).
+        let sol = catalog
+            .resolve("gpt-5.6-sol")
+            .expect("expected gpt-5.6-sol pricing");
+        assert_close(sol.input_cost_per_token, 5.0 / 1_000_000.0);
+        assert_close(sol.cache_read_input_cost_per_token, 0.5 / 1_000_000.0);
+        assert_close(sol.output_cost_per_token, 30.0 / 1_000_000.0);
+
+        let terra = catalog
+            .resolve("gpt-5.6-terra")
+            .expect("expected gpt-5.6-terra pricing");
+        assert_close(terra.output_cost_per_token, 15.0 / 1_000_000.0);
+
+        let luna = catalog
+            .resolve("gpt-5.6-luna")
+            .expect("expected gpt-5.6-luna pricing");
+        assert_close(luna.output_cost_per_token, 6.0 / 1_000_000.0);
+
+        // Dashed Cache-writes cells keep the remaining columns aligned.
         let gpt_55 = catalog
             .resolve("gpt-5.5")
             .expect("expected gpt-5.5 pricing");
@@ -989,6 +1291,7 @@ mod tests {
         assert_close(pro.cache_read_input_cost_per_token, 30.0 / 1_000_000.0);
         assert_close(pro.output_cost_per_token, 180.0 / 1_000_000.0);
 
+        // Specialized single-tier row: Output is the final cell.
         let codex = catalog
             .resolve("gpt-5.3-codex")
             .expect("expected gpt-5.3-codex pricing");
@@ -1003,6 +1306,18 @@ mod tests {
         assert!(catalog.resolve("gpt-5.5").is_some());
         assert!(catalog.resolve("gpt-5.4").is_some());
         assert!(catalog.resolve("gpt-5.3-codex").is_some());
+
+        // Guard the Cache-writes column mapping against the live page: the
+        // GPT-5.6 flagship Output prices must survive the round trip, not the
+        // Cache-writes values ($6.25 / $3.125 / $1.25).
+        let sol = catalog
+            .resolve("gpt-5.6-sol")
+            .expect("expected live gpt-5.6-sol pricing");
+        assert_close(sol.output_cost_per_token, 30.0 / 1_000_000.0);
+        let terra = catalog
+            .resolve("gpt-5.6-terra")
+            .expect("expected live gpt-5.6-terra pricing");
+        assert_close(terra.output_cost_per_token, 15.0 / 1_000_000.0);
     }
 
     #[test]

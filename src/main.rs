@@ -376,7 +376,7 @@ fn render_statusline_command(args: &StatuslineArgs) -> Result<String, String> {
 }
 
 fn pricing_catalog(offline: bool) -> PricingCatalog {
-    PricingCatalog::default_catalog_with_live_openai(!offline)
+    PricingCatalog::default_catalog_with_live(!offline)
 }
 
 fn resolve_report_args(command: &str, args: &ReportArgs) -> Result<ResolvedReportArgs, String> {

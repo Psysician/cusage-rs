@@ -6,9 +6,19 @@ This repository is intentionally separate from Node-based forks. Upstream behavi
 
 ## Installation
 
+Via crates.io:
+
 ```bash
 cargo install cusage-rs
 ```
+
+Via npm (installs the prebuilt binary for your platform, ~1.5 MB):
+
+```bash
+npm install -g cusage-rs
+```
+
+Or download a prebuilt binary from the [GitHub releases](https://github.com/Psysician/cusage-rs/releases) (Linux gnu/musl, macOS, and Windows on x64/arm64).
 
 Then run:
 
@@ -31,8 +41,8 @@ Core rewrite goals are implemented for the main report pipeline:
 - data discovery from Claude project roots (`~/.config/claude/projects`, `~/.claude/projects`, and `CLAUDE_CONFIG_DIR` overrides), plus OpenAI/Codex JSONL roots through `OPENAI_USAGE_DIR`, `OPENAI_CONFIG_DIR`, and `CODEX_HOME`
 - config-file loading/precedence across legacy, user, local, environment, custom config path, and CLI args
 - deterministic JSON output with fixture-driven parity checks
-- shared default pricing catalog for Claude and OpenAI model aliases/provider-prefixed names across all report modes and `statusline`
-- live OpenAI pricing refresh from `https://developers.openai.com/api/docs/pricing` when not in `--offline` mode, with compiled fallback prices when fetching fails
+- shared default pricing catalog covering Claude (through the "5" generation — Fable 5, Mythos 5, Sonnet 5, Opus 4.6/4.7/4.8) and OpenAI (through GPT-5.6 Sol/Terra/Luna) model aliases and provider-prefixed names across all report modes and `statusline`, including the `[1m]` 1M-context id suffix Claude Code writes
+- live pricing refresh from the official Anthropic (`https://platform.claude.com/docs/en/about-claude/pricing.md`) and OpenAI (`https://developers.openai.com/api/docs/pricing`) pricing pages when not in `--offline` mode, with compiled fallback prices when fetching fails
 - explicit cost provenance tracking (`raw`, `calculated`, `missing`) so unresolved models stay visibly missing
 - redesigned default human-readable output for `daily`, `weekly`, `monthly`, `session`, and `blocks` plus a compact, scan-friendly `statusline` line
 
@@ -65,8 +75,8 @@ Documented upstream options not yet implemented in this rewrite:
 Additional explicit deltas:
 
 - `--timezone` currently accepts UTC/GMT/Z and fixed signed offsets (`+HH`, `+HHMM`, `+HH:MM`, and `UTC/GMT` prefixed forms), not IANA zone names such as `Europe/Berlin`
-- `--offline` disables live OpenAI pricing refresh and uses the compiled Claude/OpenAI catalog only
-- pricing defaults are compiled into `PricingCatalog::default_catalog()`. OpenAI prices are refreshed live from the official OpenAI pricing page when online, but there is still no user-supplied pricing catalog hook
+- `--offline` disables live Anthropic/OpenAI pricing refresh and uses the compiled Claude/OpenAI catalog only
+- pricing defaults are compiled into `PricingCatalog::default_catalog()`; when online, Claude and OpenAI prices are refreshed live from the official Anthropic and OpenAI pricing pages, but there is still no user-supplied pricing catalog hook
 - unknown/non-catalog model names without raw `cost_usd` remain unresolved and are reported through `missing_entries`/`R/C/M`, rather than being assigned synthetic prices
 - binary name is currently `cusage-rs`
 
