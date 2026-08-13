@@ -29,6 +29,10 @@ const SESSION_ID_PATHS: &[&[&str]] = &[
     &["metadata", "sessionId"],
 ];
 
+const CODEX_PROJECT_PATHS: &[&[&str]] = &[&["payload", "cwd"]];
+
+const CODEX_MODEL_PATHS: &[&[&str]] = &[&["payload", "model"]];
+
 const PROJECT_PATHS: &[&[&str]] = &[
     &["project"],
     &["project_name"],
@@ -65,6 +69,7 @@ const MESSAGE_ID_PATHS: &[&[&str]] = &[&["message", "id"], &["message_id"], &["m
 const REQUEST_ID_PATHS: &[&[&str]] = &[&["requestId"], &["request_id"]];
 
 const INPUT_TOKEN_PATHS: &[&[&str]] = &[
+    &["payload", "info", "last_token_usage", "input_tokens"],
     &["input_tokens"],
     &["inputTokens"],
     &["prompt_tokens"],
@@ -84,6 +89,7 @@ const INPUT_TOKEN_PATHS: &[&[&str]] = &[
 ];
 
 const OUTPUT_TOKEN_PATHS: &[&[&str]] = &[
+    &["payload", "info", "last_token_usage", "output_tokens"],
     &["output_tokens"],
     &["outputTokens"],
     &["completion_tokens"],
@@ -103,6 +109,12 @@ const OUTPUT_TOKEN_PATHS: &[&[&str]] = &[
 ];
 
 const CACHE_CREATION_TOKEN_PATHS: &[&[&str]] = &[
+    &[
+        "payload",
+        "info",
+        "last_token_usage",
+        "cache_write_input_tokens",
+    ],
     &["cache_creation_input_tokens"],
     &["cacheCreationInputTokens"],
     &["cache_creation_tokens"],
@@ -127,6 +139,7 @@ const CACHE_READ_TOKEN_PATHS: &[&[&str]] = &[
 ];
 
 const OPENAI_CACHED_TOKEN_PATHS: &[&[&str]] = &[
+    &["payload", "info", "last_token_usage", "cached_input_tokens"],
     &["usage", "input_tokens_details", "cached_tokens"],
     &["usage", "inputTokensDetails", "cachedTokens"],
     &["usage", "prompt_tokens_details", "cached_tokens"],
@@ -147,6 +160,7 @@ const OPENAI_CACHED_TOKEN_PATHS: &[&[&str]] = &[
 ];
 
 const TOTAL_TOKEN_PATHS: &[&[&str]] = &[
+    &["payload", "info", "last_token_usage", "total_tokens"],
     &["total_tokens"],
     &["totalTokens"],
     &["usage", "total_tokens"],
@@ -580,6 +594,22 @@ pub fn parse_jsonl_file(path: &Path) -> ParseResult {
     parse_jsonl_file_with_dedup(path, &mut processed_hashes)
 }
 
+#[derive(Debug, Default)]
+struct CodexSessionContext {
+    session_id: Option<String>,
+    project: Option<String>,
+    model: Option<String>,
+}
+
+impl CodexSessionContext {
+    fn for_file(path: &Path) -> Self {
+        Self {
+            session_id: codex_session_id_from_path(path),
+            ..Self::default()
+        }
+    }
+}
+
 fn parse_jsonl_file_with_dedup(
     path: &Path,
     processed_hashes: &mut BTreeSet<String>,
@@ -607,6 +637,7 @@ fn parse_jsonl_reader<R: BufRead>(
     processed_hashes: &mut BTreeSet<String>,
 ) -> ParseResult {
     let mut output = ParseResult::default();
+    let mut codex_context = CodexSessionContext::for_file(path);
 
     for (index, line_result) in reader.lines().enumerate() {
         let line_number = index + 1;
@@ -651,7 +682,9 @@ fn parse_jsonl_reader<R: BufRead>(
             continue;
         }
 
-        match normalize_usage_event(&raw_value, path, line_number) {
+        update_codex_context(&raw_value, &mut codex_context);
+
+        match normalize_usage_event(&raw_value, path, line_number, &codex_context) {
             Ok(Some(event)) => {
                 let Some(unique_hash) = create_unique_hash(&raw_value) else {
                     output.events.push(event);
@@ -682,20 +715,54 @@ fn might_contain_usage_payload(line: &str) -> bool {
         || line.contains("\"promptTokens\"")
         || line.contains("\"completion_tokens\"")
         || line.contains("\"completionTokens\"")
+        || line.contains("\"type\":\"turn_context\"")
+}
+
+fn update_codex_context(value: &JsonValue, context: &mut CodexSessionContext) {
+    if root_type(value).as_deref() == Some("turn_context") {
+        context.project =
+            extract_string(value, CODEX_PROJECT_PATHS, &[]).or_else(|| context.project.take());
+        context.model =
+            extract_string(value, CODEX_MODEL_PATHS, &[]).or_else(|| context.model.take());
+    }
+}
+
+fn codex_session_id_from_path(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?.trim();
+    if stem.is_empty() {
+        return None;
+    }
+
+    let session_id = stem
+        .strip_prefix("rollout-")
+        .and_then(|rest| rest.get(20..))
+        .filter(|value| !value.is_empty())
+        .unwrap_or(stem);
+    Some(session_id.to_owned())
+}
+
+fn is_codex_token_count(value: &JsonValue) -> bool {
+    root_type(value).as_deref() == Some("event_msg")
+        && value_at_path(value, &["payload", "type"])
+            .and_then(value_to_non_empty_string)
+            .as_deref()
+            == Some("token_count")
 }
 
 fn normalize_usage_event(
     value: &JsonValue,
     file: &Path,
     line_number: usize,
+    codex_context: &CodexSessionContext,
 ) -> Result<Option<UsageEvent>, String> {
     let event_kind = EventKind::from_raw(root_type(value).as_deref());
     let has_message_usage = value_at_path(value, &["message", "usage"]).is_some();
+    let codex_token_count = is_codex_token_count(value);
     let usage = extract_usage(value);
     if usage.is_none() {
         return Ok(None);
     }
-    if !has_message_usage && event_kind != EventKind::Assistant {
+    if !has_message_usage && event_kind != EventKind::Assistant && !codex_token_count {
         return Ok(None);
     }
 
@@ -703,7 +770,11 @@ fn normalize_usage_event(
         return Err("missing parseable timestamp".to_owned());
     };
 
-    let model = extract_string(value, MODEL_PATHS, MODEL_KEYS);
+    let model = extract_string(value, MODEL_PATHS, MODEL_KEYS).or_else(|| {
+        codex_token_count
+            .then(|| codex_context.model.clone())
+            .flatten()
+    });
     if is_synthetic_model(model.as_deref()) {
         // Claude Code records synthetic (locally-generated, non-API) messages with
         // model "<synthetic>" and no real token usage; skip them so they do not
@@ -718,8 +789,16 @@ fn normalize_usage_event(
         },
         occurred_at_unix_ms,
         event_kind,
-        session_id: extract_string(value, SESSION_ID_PATHS, SESSION_ID_KEYS),
-        project: extract_project(value, file),
+        session_id: extract_string(value, SESSION_ID_PATHS, SESSION_ID_KEYS).or_else(|| {
+            codex_token_count
+                .then(|| codex_context.session_id.clone())
+                .flatten()
+        }),
+        project: extract_project(value, file).or_else(|| {
+            codex_token_count
+                .then(|| codex_context.project.clone())
+                .flatten()
+        }),
         model,
         speed: UsageSpeed::from_raw(extract_string(value, SPEED_PATHS, SPEED_KEYS).as_deref()),
         usage: usage.expect("usage presence checked above"),
@@ -1220,6 +1299,35 @@ mod tests {
         );
         assert_eq!(parsed.events[1].usage.input_tokens, 15);
         assert_eq!(parsed.events[1].usage.cache_read_input_tokens, 5);
+    }
+
+    #[test]
+    fn parses_codex_token_count_records_with_session_context() {
+        let test_dir = TestDir::new();
+        let file = test_dir
+            .path()
+            .join("rollout-2026-08-13T18-24-00-session-1.jsonl");
+        let content = concat!(
+            "{\"timestamp\":\"2026-08-13T18:24:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"session-1\",\"cwd\":\"/workspace/project\",\"model_provider\":\"openai\"}}\n",
+            "{\"timestamp\":\"2026-08-13T18:24:01Z\",\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/workspace/project\",\"model\":\"gpt-5.6-sol\"}}\n",
+            "{\"timestamp\":\"2026-08-13T18:24:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":999,\"cached_input_tokens\":444,\"cache_write_input_tokens\":0,\"output_tokens\":111,\"total_tokens\":1110},\"last_token_usage\":{\"input_tokens\":100,\"cached_input_tokens\":40,\"cache_write_input_tokens\":0,\"output_tokens\":25,\"reasoning_output_tokens\":5,\"total_tokens\":125}}}}\n"
+        );
+
+        write(&file, content).expect("failed to write Codex fixture file");
+
+        let parsed = parse_jsonl_file(&file);
+
+        assert!(parsed.warnings.is_empty());
+        assert_eq!(parsed.events.len(), 1);
+        let event = &parsed.events[0];
+        assert_eq!(event.session_id.as_deref(), Some("session-1"));
+        assert_eq!(event.project.as_deref(), Some("/workspace/project"));
+        assert_eq!(event.model.as_deref(), Some("gpt-5.6-sol"));
+        assert_eq!(event.usage.input_tokens, 60);
+        assert_eq!(event.usage.output_tokens, 25);
+        assert_eq!(event.usage.cache_creation_input_tokens, 0);
+        assert_eq!(event.usage.cache_read_input_tokens, 40);
+        assert_eq!(event.usage.total_tokens, 125);
     }
 
     #[test]
