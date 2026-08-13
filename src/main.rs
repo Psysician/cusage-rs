@@ -273,7 +273,8 @@ fn prepare_events(args: &ResolvedReportArgs) -> Result<PreparedEvents, String> {
     let filters = SharedFilters::from_resolved(args)?;
     let data_roots = DataRootOptions::from_environment().resolve_project_roots();
     let discovered = discover_session_files(&data_roots);
-    let parsed = parse_jsonl_files(&discovered.files);
+    let files = filter_codex_files_by_date(&discovered.files, &filters);
+    let parsed = parse_jsonl_files(&files);
     let events = filter_and_shift_events(parsed.events, &filters);
     let locale_decimal_comma = args
         .locale
@@ -291,6 +292,56 @@ fn prepare_events(args: &ResolvedReportArgs) -> Result<PreparedEvents, String> {
             locale_decimal_comma,
         },
     })
+}
+
+fn filter_codex_files_by_date(files: &[PathBuf], filters: &SharedFilters) -> Vec<PathBuf> {
+    if filters.since.is_none() && filters.until.is_none() {
+        return files.to_vec();
+    }
+
+    let since_day = filters
+        .since
+        .map(|day| day.days_since_epoch().saturating_sub(1));
+    let until_day = filters
+        .until
+        .map(|day| day.days_since_epoch().saturating_add(1));
+
+    files
+        .iter()
+        .filter(|file| {
+            let Some(day) = codex_date_from_path(file) else {
+                return true;
+            };
+            let day = day.days_since_epoch();
+            let recent_enough = since_day.is_none_or(|since| {
+                day >= since
+                    || file_modified_days_since_epoch(file)
+                        .is_some_and(|modified| modified >= since)
+            });
+            recent_enough && until_day.is_none_or(|until| day <= until)
+        })
+        .cloned()
+        .collect()
+}
+
+fn file_modified_days_since_epoch(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let duration = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some((duration.as_secs() / 86_400) as i64)
+}
+
+fn codex_date_from_path(path: &Path) -> Option<ParsedDay> {
+    let components = path
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()?;
+    let sessions = components
+        .iter()
+        .position(|component| *component == "sessions")?;
+    let year = *components.get(sessions + 1)?;
+    let month = *components.get(sessions + 2)?;
+    let day = *components.get(sessions + 3)?;
+    parse_cli_day(&format!("{year}{month}{day}")).ok()
 }
 
 fn render_daily_command(args: &ReportArgs) -> Result<String, String> {
@@ -1797,6 +1848,36 @@ mod tests {
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].session_id.as_deref(), Some("s-in-start"));
         assert_eq!(filtered[1].session_id.as_deref(), Some("s-in-end"));
+    }
+
+    #[test]
+    fn filters_codex_rollout_paths_before_parsing_with_timezone_padding() {
+        let filters = SharedFilters {
+            since: Some(parse_cli_day("20260813").expect("valid since date")),
+            until: Some(parse_cli_day("20260813").expect("valid until date")),
+            project: None,
+            timezone_offset_minutes: 120,
+        };
+        let files = vec![
+            PathBuf::from("/home/tester/.codex/sessions/2026/08/11/old.jsonl"),
+            PathBuf::from("/home/tester/.codex/sessions/2026/08/12/edge-before.jsonl"),
+            PathBuf::from("/home/tester/.codex/sessions/2026/08/13/current.jsonl"),
+            PathBuf::from("/home/tester/.codex/sessions/2026/08/14/edge-after.jsonl"),
+            PathBuf::from("/home/tester/.codex/sessions/2026/08/15/new.jsonl"),
+            PathBuf::from("/home/tester/.claude/projects/project/session.jsonl"),
+        ];
+
+        let filtered = filter_codex_files_by_date(&files, &filters);
+
+        assert_eq!(
+            filtered,
+            vec![
+                PathBuf::from("/home/tester/.codex/sessions/2026/08/12/edge-before.jsonl"),
+                PathBuf::from("/home/tester/.codex/sessions/2026/08/13/current.jsonl"),
+                PathBuf::from("/home/tester/.codex/sessions/2026/08/14/edge-after.jsonl"),
+                PathBuf::from("/home/tester/.claude/projects/project/session.jsonl"),
+            ]
+        );
     }
 
     #[test]

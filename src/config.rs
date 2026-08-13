@@ -77,10 +77,25 @@ impl DataRootOptions {
         if let Some(raw_roots) = self.openai_config_dir.as_deref() {
             roots.extend(parse_path_list(raw_roots, home_dir));
         }
-        if let Some(raw_codex_home) = self.codex_home.as_deref() {
-            for root in parse_path_list(raw_codex_home, home_dir) {
-                roots.push(root.join("sessions"));
-            }
+        let should_add_default_codex = self
+            .claude_config_dir
+            .as_deref()
+            .is_none_or(|raw| parse_path_list(raw, home_dir).is_empty())
+            && self.openai_usage_dir.is_none()
+            && self.openai_config_dir.is_none();
+        let codex_homes = self
+            .codex_home
+            .as_deref()
+            .map(|raw| parse_path_list(raw, home_dir))
+            .filter(|paths| !paths.is_empty())
+            .or_else(|| {
+                should_add_default_codex
+                    .then(|| home_dir.map(|home| vec![home.join(".codex")]))
+                    .flatten()
+            })
+            .unwrap_or_default();
+        for root in codex_homes {
+            roots.push(root.join("sessions"));
         }
         roots
     }
@@ -194,6 +209,7 @@ mod tests {
             roots,
             vec![
                 PathBuf::from("/home/tester/.claude/projects"),
+                PathBuf::from("/home/tester/.codex/sessions"),
                 PathBuf::from("/home/tester/.config/claude/projects"),
             ]
         );
@@ -262,6 +278,7 @@ mod tests {
             roots,
             vec![
                 PathBuf::from("/home/tester/.claude/projects"),
+                PathBuf::from("/home/tester/.codex/sessions"),
                 PathBuf::from("/home/tester/.config/claude/projects"),
             ]
         );
